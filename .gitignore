@@ -1,0 +1,55 @@
+# Local agent tooling
+.agents/
+.codex/
+.code/
+.trellis/
+AGENTS.md
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test, type-check, and lint caches
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+
+# Coverage output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
