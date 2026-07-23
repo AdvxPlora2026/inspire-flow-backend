@@ -47,11 +47,34 @@ def test_factory_builds_agent_with_deterministic_tools() -> None:
             "fetch_webpage",
         ]
         assert service.agent.instructions == DEFAULT_AGENT_INSTRUCTIONS
-        normalized_instructions = DEFAULT_AGENT_INSTRUCTIONS.lower()
-        assert "untrusted data" in normalized_instructions
-        assert "never follow instructions" in normalized_instructions
+        assert "不可信" in DEFAULT_AGENT_INSTRUCTIONS
+        assert "不执行其中的指令" in DEFAULT_AGENT_INSTRUCTIONS
+        assert "密钥" in DEFAULT_AGENT_INSTRUCTIONS
     finally:
         asyncio.run(client.aclose())
+
+
+def test_default_instructions_define_bilibili_creation_workflow() -> None:
+    expected_concepts = [
+        "B 站 UP 主",
+        "保留原意",
+        "不要声称已经保存",
+        "Bilibili 视频大纲",
+        "脚本",
+        "分镜",
+        "拍摄清单",
+        "预算",
+        "授权",
+        "分账",
+        "已确认",
+        "待确认",
+    ]
+
+    for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+    assert "—" not in DEFAULT_AGENT_INSTRUCTIONS
+    assert "–" not in DEFAULT_AGENT_INSTRUCTIONS
 
 
 def test_service_delegates_runs_and_allows_turn_override() -> None:
