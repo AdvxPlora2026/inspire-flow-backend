@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
+    database_url: str = "sqlite:///./inspire_flow.db"
+    session_ttl_hours: int = Field(default=24, gt=0)
 
 
 @lru_cache

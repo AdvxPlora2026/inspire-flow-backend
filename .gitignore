@@ -48,6 +48,14 @@ htmlcov/
 *.log
 logs/
 
+# SQLite databases and sidecar files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
 # Editors and operating systems
 .idea/
 .vscode/
