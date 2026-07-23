@@ -55,8 +55,12 @@ curl http://127.0.0.1:8000/api/v1/health
 ```
 
 The REST user system supports registration, login, profile updates, and
-logout. See [HANDOFF_USERSYS.MD](HANDOFF_USERSYS.MD) for request examples,
+logout. See [HANDOFF_USERSYS.MD](docs/HANDOFF_USERSYS.MD) for request examples,
 credential handling, and error responses.
+
+The internal Agent service includes date/time, no-key web search, and safe
+webpage fetch tools. See [Agent service handoff](docs/prompt.md) for Python
+usage, limits, provider caveats, and security boundaries.
 
 ## Project structure
 
@@ -71,7 +75,7 @@ credential handling, and error responses.
     │   ├── models/   # User and authentication-session entities
     │   └── repositories/ # Database access implementations
     ├── schemas/      # Pydantic request and response contracts
-    ├── services/     # Application and business behavior
+    ├── services/     # Application behavior, including users and Agent tools
     └── main.py       # FastAPI application factory and module-level app
 ```
 
