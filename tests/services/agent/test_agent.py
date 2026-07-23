@@ -77,6 +77,66 @@ def test_default_instructions_define_bilibili_creation_workflow() -> None:
     assert "–" not in DEFAULT_AGENT_INSTRUCTIONS
 
 
+def test_default_instructions_use_context_without_repeating_questions() -> None:
+    expected_concepts = [
+        "动态上下文",
+        "不要重复询问",
+        "用户本轮明确表达",
+        "更新了哪项理解",
+        "一个最值得回答的问题",
+        "2 到 4 个明确选项",
+        "直接生成",
+    ]
+
+    for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+
+def test_default_instructions_define_stages_and_artifact_shapes() -> None:
+    expected_stages = [
+        "灵感澄清",
+        "方向确认",
+        "大纲生成",
+        "内容细化",
+        "分镜或脚本生成",
+        "拍摄准备",
+        "发布准备",
+    ]
+    expected_artifact_fields = [
+        "镜头编号",
+        "台词或声音",
+        "建议时长",
+        "拍摄提示",
+        "旁白",
+        "对白",
+        "画面提示",
+        "音效或环境声",
+    ]
+
+    for concept in [*expected_stages, *expected_artifact_fields]:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+    assert "不要一次跨越过多阶段" in DEFAULT_AGENT_INSTRUCTIONS
+    assert "普通对话使用自然语言" in DEFAULT_AGENT_INSTRUCTIONS
+    assert "Markdown" in DEFAULT_AGENT_INSTRUCTIONS
+
+
+def test_default_instructions_protect_context_and_external_operations() -> None:
+    expected_concepts = [
+        "其他项目或其他用户",
+        "上传",
+        "付款",
+        "删除",
+        "工具结果明确显示操作成功",
+        "停止使用相关上下文",
+        "医疗、法律或财务",
+        "虚假的确定性结论",
+    ]
+
+    for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+
 def test_service_delegates_runs_and_allows_turn_override() -> None:
     expected = object()
     runner = FakeRunner(expected)
