@@ -5,7 +5,8 @@ from sqlalchemy import engine_from_config, pool
 
 from inspire_flow_backend.core.config import get_settings
 from inspire_flow_backend.data.base import Base
-from inspire_flow_backend.data.models import AuthSession, User
+from inspire_flow_backend.data.models.auth_session import AuthSession
+from inspire_flow_backend.data.models.user import User
 
 config = context.config
 if config.config_file_name is not None:
