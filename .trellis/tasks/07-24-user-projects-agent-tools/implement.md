@@ -107,3 +107,13 @@ uv run pytest -W error -q
 - Never let a cross-user UUID reveal that a project exists.
 - Never make CRUD depend on model credentials.
 - Never use a live provider or public network in automated tests.
+
+## 7. Optional project icon
+
+- [x] Write failing schema, service, API, migration, and Agent tool tests for
+      unset, set, invalid, no-op, and cleared `icon_url`.
+- [x] Add nullable `icon_url` through the shared project contract and revision
+      `20260724_0006`; preserve existing rows on upgrade and downgrade.
+- [x] Extend create/update Agent tools without exposing ownership or weakening
+      confirmation behavior.
+- [x] Update handoff/spec documentation and run the complete quality gate.

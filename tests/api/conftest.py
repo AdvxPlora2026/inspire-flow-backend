@@ -139,6 +139,7 @@ class FakeApiProjectDraftGenerator:
             type="科技数码",
             audience="希望保护隐私的创作者",
             summary="对比本地部署的速度和效果",
+            icon_url=None,
         )
 
 

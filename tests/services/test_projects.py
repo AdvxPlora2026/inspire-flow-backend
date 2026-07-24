@@ -54,12 +54,16 @@ def add_user(db: Session, nickname: str) -> User:
     return user
 
 
-def project_payload(title: str = "MPS 实测") -> ProjectCreate:
+def project_payload(
+    title: str = "MPS 实测",
+    icon_url: str | None = None,
+) -> ProjectCreate:
     return ProjectCreate(
         title=title,
         type="科技数码",
         audience="Mac 用户",
         summary="在本地运行语音识别",
+        icon_url=icon_url,
     )
 
 
@@ -82,6 +86,7 @@ def test_project_lifecycle_and_user_isolation(db: Session) -> None:
     assert created.type == "科技数码"
     assert created.audience == "Mac 用户"
     assert created.summary == "在本地运行语音识别"
+    assert created.icon_url is None
     assert list_projects(db, owner.id, limit=20, offset=0).total == 1
     assert list_projects(db, other.id, limit=20, offset=0).total == 0
     with pytest.raises(ProjectNotFoundError):
@@ -138,6 +143,34 @@ def test_project_no_op_update_preserves_updated_at(db: Session) -> None:
     assert result.updated_at <= utc_now() + timedelta(seconds=1)
 
 
+def test_project_icon_can_be_set_cleared_and_left_unchanged(db: Session) -> None:
+    owner = add_user(db, "icon-owner")
+    project = create_project(
+        db,
+        owner.id,
+        project_payload(icon_url="https://cdn.example.com/project.png"),
+    )
+
+    assert project.icon_url == "https://cdn.example.com/project.png"
+    before = project.updated_at
+    unchanged = update_project(
+        db,
+        owner.id,
+        project.id,
+        ProjectUpdate(icon_url="https://cdn.example.com/project.png"),
+    )
+    assert unchanged.updated_at == before
+
+    cleared = update_project(
+        db,
+        owner.id,
+        project.id,
+        ProjectUpdate(icon_url=None),
+    )
+    assert cleared.icon_url is None
+    assert cleared.updated_at > before
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -178,6 +211,13 @@ def test_project_no_op_update_preserves_updated_at(db: Session) -> None:
             "audience": "Mac 用户",
             "summary": "简介",
         },
+        {
+            "title": "标题",
+            "type": "科技数码",
+            "audience": "Mac 用户",
+            "summary": "简介",
+            "icon_url": "not-a-url",
+        },
     ],
 )
 def test_project_create_rejects_invalid_fields(payload: dict[str, object]) -> None:
@@ -191,6 +231,7 @@ def test_project_create_rejects_invalid_fields(payload: dict[str, object]) -> No
         {},
         {"title": None},
         {"type": "  "},
+        {"icon_url": "not-a-url"},
         {"unknown": "forbidden"},
     ],
 )

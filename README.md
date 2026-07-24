@@ -75,7 +75,8 @@ conversation and memory integration.
 Projects can be entered manually or prepared as an editable, unsaved draft
 from a natural-language description. The Agent can also list, inspect, edit,
 create, and delete the current user's projects with explicit confirmation
-before creation and deletion. See
+before creation and deletion. Projects may carry an optional HTTP(S) icon URL;
+unset icons are returned as `null`. See
 [Project API and Agent handoff](docs/HANDOFF_PROJECTS.md).
 
 The InspireFlow Agent includes date/time, no-key web search, safe webpage

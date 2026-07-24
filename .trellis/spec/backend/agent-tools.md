@@ -70,10 +70,11 @@ Registered tool names and order are stable:
 current_datetime(timezone_name="UTC")
 search_website(query, max_results=5)
 fetch_webpage(url)
-create_project(title, type, audience, summary, confirmed=False)
+create_project(title, type, audience, summary, icon_url=None, confirmed=False)
 list_projects(limit=50, offset=0)
 get_project(project_id)
-update_project(project_id, title=None, type=None, audience=None, summary=None)
+update_project(project_id, title=None, type=None, audience=None, summary=None,
+               icon_url=None, clear_icon=False)
 delete_project(project_id, confirmed=False)
 ```
 
@@ -122,6 +123,11 @@ without inserting a row. A later explicit user confirmation permits
 requires explicit confirmation in a separate user turn before
 `confirmed=true`. Do not use the SDK's resumable approval mechanism until the
 HTTP conversation API persists and resumes suspended runs.
+
+Project icon URLs are optional HTTP(S) values up to 2,048 characters. Project
+responses always include `icon_url`, using JSON `null` when unset.
+`update_project(clear_icon=true)` clears the icon; sending both a replacement
+URL and `clear_icon=true` returns `invalid_project`.
 
 The default search provider is DuckDuckGo's HTML page. On an expected provider
 failure or no parseable results, use the supported Chinese MediaWiki Action API

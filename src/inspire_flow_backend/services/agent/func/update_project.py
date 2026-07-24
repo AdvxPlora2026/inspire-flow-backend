@@ -27,6 +27,8 @@ def build_update_project_tool() -> FunctionTool:
         type: str | None = None,
         audience: str | None = None,
         summary: str | None = None,
+        icon_url: str | None = None,
+        clear_icon: bool = False,
     ) -> str:
         """Update selected fields of an owned project.
 
@@ -36,7 +38,11 @@ def build_update_project_tool() -> FunctionTool:
             type: Replacement category.
             audience: Replacement intended audience.
             summary: Replacement description.
+            icon_url: Replacement HTTP or HTTPS project icon URL.
+            clear_icon: True to remove the current project icon.
         """
+        if clear_icon and icon_url is not None:
+            return invalid_project_error_json()
         values = {
             name: value
             for name, value in {
@@ -47,6 +53,10 @@ def build_update_project_tool() -> FunctionTool:
             }.items()
             if value is not None
         }
+        if clear_icon:
+            values["icon_url"] = None
+        elif icon_url is not None:
+            values["icon_url"] = icon_url
         try:
             payload = ProjectUpdate.model_validate(values)
         except ValidationError:

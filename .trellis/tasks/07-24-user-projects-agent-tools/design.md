@@ -20,6 +20,7 @@ projects
   type        VARCHAR(50) not null
   audience    VARCHAR(500) not null
   summary     TEXT not null
+  icon_url    VARCHAR(2048) null
   created_at  UTCDateTime not null
   updated_at  UTCDateTime not null
 ```
@@ -32,6 +33,9 @@ Alembic revision `20260724_0005` follows `20260724_0004`, creates the table and
 index on upgrade, and drops them on downgrade. Existing rows and tables are not
 rewritten.
 
+Revision `20260724_0006` adds nullable `projects.icon_url`. Existing projects
+read as `null`; downgrade removes only the icon column and preserves projects.
+
 ## Shared schemas
 
 `schemas/projects.py` owns all validation and public projections:
@@ -42,6 +46,7 @@ class ProjectFields(BaseModel):
     type: str        # normalized, 1..50
     audience: str    # normalized, 1..500
     summary: str     # normalized, 1..2000
+    icon_url: HttpUrl | None  # <= 2048, null when unset
 
 
 class ProjectDraftRequest(BaseModel):
@@ -61,7 +66,8 @@ class ProjectUpdate(BaseModel):
     type: str | None
     audience: str | None
     summary: str | None
-    # at least one supplied; supplied null is invalid
+    icon_url: HttpUrl | None
+    # at least one supplied; null is invalid except icon_url=null clears
 
 
 class ProjectPublic(ProjectFields):
@@ -216,6 +222,9 @@ no insert. `confirmed=true` inserts. `delete_project(..., confirmed=false)`
 fetches the owned project and returns its UUID/title without deleting;
 `confirmed=true` deletes. The default prompt permits either confirmed call
 only after a later user message explicitly confirms the displayed operation.
+Project create accepts an optional `icon_url`. Project update accepts
+`icon_url` plus `clear_icon`; `clear_icon=true` writes `null`, while omission
+leaves the current icon unchanged.
 
 The SDK's native `needs_approval` interruption is intentionally not used in
 this MVP because the current HTTP conversation contract has no persisted

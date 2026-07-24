@@ -1,8 +1,17 @@
 from datetime import datetime
-from typing import Self
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
+
+ProjectIconUrl = Annotated[HttpUrl, Field(max_length=2048)]
 
 
 def _normalize_required(value: object) -> object:
@@ -21,6 +30,7 @@ class ProjectFields(BaseModel):
     type: str = Field(min_length=1, max_length=50)
     audience: str = Field(min_length=1, max_length=500)
     summary: str = Field(min_length=1, max_length=2_000)
+    icon_url: ProjectIconUrl | None = None
 
     @field_validator("title", "type", "audience", "summary", mode="before")
     @classmethod
@@ -54,6 +64,7 @@ class ProjectUpdate(BaseModel):
     type: str | None = Field(default=None, min_length=1, max_length=50)
     audience: str | None = Field(default=None, min_length=1, max_length=500)
     summary: str | None = Field(default=None, min_length=1, max_length=2_000)
+    icon_url: ProjectIconUrl | None = None
 
     @field_validator("title", "type", "audience", "summary", mode="before")
     @classmethod
@@ -66,7 +77,10 @@ class ProjectUpdate(BaseModel):
     def validate_supplied_fields(self) -> Self:
         if not self.model_fields_set:
             raise ValueError("At least one project field is required")
-        if any(getattr(self, field_name) is None for field_name in self.model_fields_set):
+        if any(
+            field_name != "icon_url" and getattr(self, field_name) is None
+            for field_name in self.model_fields_set
+        ):
             raise ValueError("Project fields cannot be null")
         return self
 

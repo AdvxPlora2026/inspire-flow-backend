@@ -157,6 +157,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "type",
         "audience",
         "summary",
+        "icon_url",
         "created_at",
         "updated_at",
     }
@@ -352,4 +353,75 @@ def test_project_migration_upgrades_existing_database_and_downgrades(
     command.downgrade(config, "20260724_0004")
     assert "projects" not in sa.inspect(engine).get_table_names()
     assert "users" in sa.inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_project_icon_migration_preserves_existing_project_rows(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "existing-project-icon.db"
+    config = make_config(database_path)
+    command.upgrade(config, "20260724_0005")
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
+    user_id = uuid4()
+    project_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO users (
+                    id, nickname, nickname_key, avatar_url, password_hash, created_at, updated_at
+                ) VALUES (
+                    :id, 'Icon Creator', 'icon-creator', NULL, 'test-only-hash', :now, :now
+                )
+                """
+            ),
+            {"id": user_id.hex, "now": now},
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO projects (
+                    id, user_id, title, type, audience, summary, created_at, updated_at
+                ) VALUES (
+                    :id, :user_id, 'Title', '科技数码', '创作者', 'Summary', :now, :now
+                )
+                """
+            ),
+            {"id": project_id.hex, "user_id": user_id.hex, "now": now},
+        )
+
+    command.upgrade(config, "head")
+
+    assert "icon_url" in {column["name"] for column in sa.inspect(engine).get_columns("projects")}
+    with engine.begin() as connection:
+        assert (
+            connection.scalar(
+                sa.text("SELECT icon_url FROM projects WHERE id = :id"),
+                {"id": project_id.hex},
+            )
+            is None
+        )
+        connection.execute(
+            sa.text("UPDATE projects SET icon_url = :icon_url WHERE id = :id"),
+            {
+                "id": project_id.hex,
+                "icon_url": "https://cdn.example.com/project.png",
+            },
+        )
+
+    command.downgrade(config, "20260724_0005")
+
+    assert "icon_url" not in {
+        column["name"] for column in sa.inspect(engine).get_columns("projects")
+    }
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(
+                sa.text("SELECT COUNT(*) FROM projects WHERE id = :id"),
+                {"id": project_id.hex},
+            )
+            == 1
+        )
     engine.dispose()

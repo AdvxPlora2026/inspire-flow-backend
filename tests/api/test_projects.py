@@ -90,6 +90,7 @@ def test_project_lifecycle_and_normalized_public_shape(client: TestClient) -> No
     assert created["type"] == "科技数码"
     assert created["audience"] == "Mac 用户"
     assert created["summary"] == "在本地运行语音识别"
+    assert created["icon_url"] is None
     assert set(created) == {
         "id",
         "user_id",
@@ -97,6 +98,7 @@ def test_project_lifecycle_and_normalized_public_shape(client: TestClient) -> No
         "type",
         "audience",
         "summary",
+        "icon_url",
         "created_at",
         "updated_at",
     }
@@ -163,6 +165,37 @@ def test_lists_only_owned_projects_with_pagination(client: TestClient) -> None:
     assert next_page.json()["items"] == [first]
 
 
+def test_project_icon_can_be_created_updated_and_cleared(client: TestClient) -> None:
+    token = register_and_login(client, "project-icon-owner")
+    response = client.post(
+        "/api/v1/projects",
+        headers=authorization(token),
+        json={
+            **PROJECT_PAYLOAD,
+            "icon_url": "https://cdn.example.com/project.png",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["icon_url"] == "https://cdn.example.com/project.png"
+    project_id = response.json()["id"]
+
+    updated = client.patch(
+        f"/api/v1/projects/{project_id}",
+        headers=authorization(token),
+        json={"icon_url": "https://cdn.example.com/new-project.png"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["icon_url"] == "https://cdn.example.com/new-project.png"
+
+    cleared = client.patch(
+        f"/api/v1/projects/{project_id}",
+        headers=authorization(token),
+        json={"icon_url": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["icon_url"] is None
+
+
 def test_cross_user_and_unknown_project_share_not_found_response(
     client: TestClient,
 ) -> None:
@@ -204,6 +237,11 @@ def test_cross_user_and_unknown_project_share_not_found_response(
             "/api/v1/projects",
             "post",
             {"json": {**PROJECT_PAYLOAD, "unexpected": True}},
+        ),
+        (
+            "/api/v1/projects",
+            "post",
+            {"json": {**PROJECT_PAYLOAD, "icon_url": "not-a-url"}},
         ),
         (f"/api/v1/projects/{uuid4()}", "patch", {"json": {}}),
         (f"/api/v1/projects/{uuid4()}", "patch", {"json": {"title": None}}),
@@ -258,6 +296,7 @@ def test_generates_unsaved_project_draft(
         "type": "科技数码",
         "audience": "希望保护隐私的创作者",
         "summary": "对比本地部署的速度和效果",
+        "icon_url": None,
     }
     generator = fake_agent_runtime.project_draft_generator
     assert generator.descriptions == ["做一期本地语音识别视频"]

@@ -37,6 +37,7 @@ class Project(Base):
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     audience: Mapped[str] = mapped_column(String(500), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    icon_url: Mapped[str | None] = mapped_column(String(2048))
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,

@@ -71,7 +71,8 @@ transcription_jobs(id, user_id, status, language, use_itn,
                    detected_language, duration_seconds, error_code,
                    attempt_count, created_at, updated_at, started_at,
                    completed_at)
-projects(id, user_id, title, type, audience, summary, created_at, updated_at)
+projects(id, user_id, title, type, audience, summary, icon_url,
+         created_at, updated_at)
 ```
 
 ### 3. Contracts
@@ -108,6 +109,8 @@ projects(id, user_id, title, type, audience, summary, created_at, updated_at)
   `updated_at DESC, id DESC` through `ix_projects_user_id_updated_at`.
 - Project services commit once per mutation. A patch that does not change a
   value must preserve `updated_at`.
+- `projects.icon_url` is nullable `VARCHAR(2048)`. Existing and unset icons
+  read as `null`; clearing an icon writes `NULL`.
 
 ### 4. Validation & Error Matrix
 
@@ -150,6 +153,8 @@ projects(id, user_id, title, type, audience, summary, created_at, updated_at)
   migration.
 - Test project columns, owner cascade, composite index, upgrade from the
   preceding revision, and downgrade that removes only the project table.
+- Test the project-icon revision from `20260724_0005` in both directions and
+  prove existing project rows survive with a null icon.
 - Use file-backed temporary SQLite databases for API tests so independent
   connections do not split in-memory state.
 

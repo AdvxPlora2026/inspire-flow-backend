@@ -477,6 +477,7 @@ def test_project_tools_enforce_confirmation_and_user_isolation() -> None:
                 "type": "科技数码",
                 "audience": "Mac 用户",
                 "summary": "本地部署语音识别",
+                "icon_url": "https://cdn.example.com/project.png",
                 "confirmed": False,
             }
 
@@ -484,6 +485,7 @@ def test_project_tools_enforce_confirmation_and_user_isolation() -> None:
             assert draft["ok"] is True
             assert draft["status"] == "confirmation_required"
             assert draft["draft"]["title"] == "MPS 实测"
+            assert draft["draft"]["icon_url"] == "https://cdn.example.com/project.png"
             assert db.scalar(select(func.count()).select_from(Project)) == 0
 
             created = invoke_project_tool(
@@ -494,6 +496,7 @@ def test_project_tools_enforce_confirmation_and_user_isolation() -> None:
             assert created["ok"] is True
             assert created["status"] == "created"
             project_id = created["project"]["id"]
+            assert created["project"]["icon_url"] == "https://cdn.example.com/project.png"
             assert db.scalar(select(func.count()).select_from(Project)) == 1
 
             listed = invoke_project_tool(tools[4], {}, owner_context)
@@ -538,10 +541,22 @@ def test_project_tools_enforce_confirmation_and_user_isolation() -> None:
 
             updated = invoke_project_tool(
                 tools[6],
-                {"project_id": project_id, "summary": "加入性能对比"},
+                {
+                    "project_id": project_id,
+                    "summary": "加入性能对比",
+                    "icon_url": "https://cdn.example.com/new-project.png",
+                },
                 owner_context,
             )
             assert updated["project"]["summary"] == "加入性能对比"
+            assert updated["project"]["icon_url"] == "https://cdn.example.com/new-project.png"
+
+            cleared = invoke_project_tool(
+                tools[6],
+                {"project_id": project_id, "clear_icon": True},
+                owner_context,
+            )
+            assert cleared["project"]["icon_url"] is None
 
             confirmation = invoke_project_tool(
                 tools[7],

@@ -24,7 +24,10 @@ that draft as a project, and manage saved projects through REST or InspireFlow.
 ### Project data
 
 - Persist projects with UUID `id`, owner `user_id`, `title`, video-like
-  `type`, target `audience`, `summary`, and UTC `created_at` / `updated_at`.
+  `type`, target `audience`, `summary`, optional `icon_url`, and UTC
+  `created_at` / `updated_at`.
+- `icon_url` accepts an HTTP(S) URL up to 2,048 characters. Unset or cleared
+  icons serialize as JSON `null`.
 - Require all four content fields and normalize surrounding whitespace.
 - Apply these bounds after normalization:
   - `title`: 1 through 120 characters
@@ -54,7 +57,8 @@ that draft as a project, and manage saved projects through REST or InspireFlow.
   project UUID. Missing and cross-user UUIDs use one safe
   `project_not_found` response.
 - Unknown fields, blank content, overlong content, empty patches, and explicit
-  `null` values return the existing safe validation envelope.
+  `null` values for required content fields return the existing safe validation
+  envelope. `icon_url=null` explicitly clears the optional icon.
 - Model configuration and provider failures use the existing
   `agent_unavailable` and `agent_run_failed` contracts.
 
@@ -76,6 +80,8 @@ that draft as a project, and manage saved projects through REST or InspireFlow.
   - only a later explicit user confirmation allows `confirmed=true` to delete.
 - `update_project` may edit a saved project when the user explicitly requests
   the change; it does not require an additional confirmation turn.
+- Agent create and update tools can set `icon_url`; update uses an explicit
+  `clear_icon=true` argument to distinguish clearing from omission.
 - Direct stateless Agent runs without authenticated project context keep
   existing non-project tools usable; project tools return a safe unavailable
   result if invoked.
@@ -114,6 +120,10 @@ that draft as a project, and manage saved projects through REST or InspireFlow.
       existing rows, enforces user cascade, and cleanly downgrades.
 - [x] uv lock, Ruff, formatting, warning-strict pytest, and migration checks
       pass.
+- [x] Projects accept a valid optional icon URL through REST and Agent tools,
+      return `null` when unset, and support clearing an existing icon.
+- [x] Alembic revision `20260724_0006` upgrades existing project rows with a
+      nullable icon column and cleanly downgrades without losing those rows.
 
 ## Out of Scope
 

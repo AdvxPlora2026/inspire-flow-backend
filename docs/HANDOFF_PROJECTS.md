@@ -28,14 +28,15 @@ curl -sS -X POST "$API_BASE_URL/projects/drafts" \
   -d '{"description":"做一期在 Mac 上本地部署语音识别的实测视频"}'
 ```
 
-响应只包含四个可编辑字段：
+响应包含可编辑的项目字段；没有图标时 `icon_url` 为 `null`：
 
 ```json
 {
   "title": "Mac 本地语音识别实测",
   "type": "科技数码",
   "audience": "重视隐私和本地工作流的内容创作者",
-  "summary": "实测本地语音识别的部署过程、速度与使用效果"
+  "summary": "实测本地语音识别的部署过程、速度与使用效果",
+  "icon_url": null
 }
 ```
 
@@ -53,7 +54,8 @@ curl -sS -X POST "$API_BASE_URL/projects" \
     "title": "Mac 本地语音识别实测",
     "type": "科技数码",
     "audience": "重视隐私和本地工作流的内容创作者",
-    "summary": "实测本地语音识别的部署过程、速度与使用效果"
+    "summary": "实测本地语音识别的部署过程、速度与使用效果",
+    "icon_url": "https://cdn.example.com/project-icons/mac-stt.png"
   }'
 ```
 
@@ -65,6 +67,7 @@ curl -sS -X POST "$API_BASE_URL/projects" \
   "type": "科技数码",
   "audience": "重视隐私和本地工作流的内容创作者",
   "summary": "实测本地语音识别的部署过程、速度与使用效果",
+  "icon_url": "https://cdn.example.com/project-icons/mac-stt.png",
   "id": "0ff9c615-f226-4275-b62f-270e8e8b2761",
   "user_id": "ecf2afce-af0d-4719-a3b3-f29c366be1ab",
   "created_at": "2026-07-24T12:00:00Z",
@@ -72,7 +75,7 @@ curl -sS -X POST "$API_BASE_URL/projects" \
 }
 ```
 
-字段限制：标题 120 字符、类型 50 字符、受众 500 字符、简介 2000 字符。四个字段都必填，清理首尾空白后不能为空。
+字段限制：标题 120 字符、类型 50 字符、受众 500 字符、简介 2000 字符。四个内容字段都必填，清理首尾空白后不能为空。`icon_url` 可选，只接受最长 2048 字符的 HTTP/HTTPS URL；省略时返回 `null`。
 
 ## 4. 查询项目
 
@@ -104,13 +107,21 @@ curl -sS "$API_BASE_URL/projects/$PROJECT_ID" \
 
 ## 5. 修改和删除
 
-修改时只提交需要变化的字段；空对象和 `null` 都会被拒绝：
+修改时只提交需要变化的字段。必填内容字段不能传 `null`；
+`icon_url: null` 专门用于清空图标：
 
 ```bash
 curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"summary":"补充 MPS、CPU 的速度和准确率对比"}'
+```
+
+```bash
+curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"icon_url":null}'
 ```
 
 删除成功返回空的 `204`：
@@ -136,7 +147,8 @@ delete_project
 
 模型看不到也不能提交 `user_id`。创建采用“草稿 → 用户确认 → 保存”两轮流程；`confirmed=false` 只返回草稿，不写数据库。删除也必须先用 `confirmed=false` 展示项目标题和 UUID，等用户在单独一轮明确确认后，才允许用 `confirmed=true` 删除。
 
-`update_project` 会直接修改用户明确指定的字段。查询外部用户或不存在的 UUID 都只返回安全的 `project_not_found`，不会暴露项目是否真实存在。
+`create_project` 可以接收 `icon_url`。`update_project` 可以传新的
+`icon_url`，或用 `clear_icon=true` 清空图标。它会直接修改用户明确指定的字段。查询外部用户或不存在的 UUID 都只返回安全的 `project_not_found`，不会暴露项目是否真实存在。
 
 ## 7. 错误约定
 

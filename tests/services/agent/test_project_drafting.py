@@ -44,6 +44,7 @@ class FakeDraftGenerator:
             type=" 科技数码 ",
             audience=" 希望保护隐私的创作者 ",
             summary=" 对比本地部署的速度和效果 ",
+            icon_url=None,
         )
 
 
@@ -65,6 +66,7 @@ def test_model_project_drafter_uses_typed_output_without_tools() -> None:
         type="科技数码",
         audience="希望保护隐私的创作者",
         summary="对比本地部署的速度和效果",
+        icon_url=None,
     )
     runner = FakeRunner(expected)
     generator = ModelProjectDraftGenerator(model="test-model", runner=runner)
@@ -93,6 +95,7 @@ def test_draft_project_returns_normalized_typed_draft() -> None:
         "type": "科技数码",
         "audience": "希望保护隐私的创作者",
         "summary": "对比本地部署的速度和效果",
+        "icon_url": None,
     }
 
 

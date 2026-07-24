@@ -51,6 +51,7 @@ def create_project(
         type=payload.type,
         audience=payload.audience,
         summary=payload.summary,
+        icon_url=str(payload.icon_url) if payload.icon_url is not None else None,
         created_at=now,
         updated_at=now,
     )
@@ -102,6 +103,8 @@ def update_project(
     changed = False
     for field_name in payload.model_fields_set:
         value = getattr(payload, field_name)
+        if field_name == "icon_url" and value is not None:
+            value = str(value)
         if getattr(project, field_name) != value:
             setattr(project, field_name, value)
             changed = True

@@ -23,6 +23,7 @@ def build_create_project_tool() -> FunctionTool:
         type: str,
         audience: str,
         summary: str,
+        icon_url: str | None = None,
         confirmed: bool = False,
     ) -> str:
         """Prepare or save a project owned by the authenticated user.
@@ -32,6 +33,7 @@ def build_create_project_tool() -> FunctionTool:
             type: Bilibili-like category or a normalized custom type.
             audience: Intended audience.
             summary: Short project description.
+            icon_url: Optional HTTP or HTTPS project icon URL.
             confirmed: True only after the user explicitly confirms saving.
         """
         try:
@@ -40,6 +42,7 @@ def build_create_project_tool() -> FunctionTool:
                 type=type,
                 audience=audience,
                 summary=summary,
+                icon_url=icon_url,
             )
         except ValidationError:
             return invalid_project_error_json()
