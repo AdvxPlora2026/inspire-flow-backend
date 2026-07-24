@@ -6,6 +6,8 @@ from inspire_flow_backend.core.identity import nickname_key
 from inspire_flow_backend.core.security import hash_password
 from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.models.user import User
+from inspire_flow_backend.data.models.user_profile import UserProfile
+from inspire_flow_backend.data.repositories.profiles import add_profile
 from inspire_flow_backend.data.repositories.users import add_user
 from inspire_flow_backend.schemas.users import UserCreate, UserUpdate
 
@@ -21,6 +23,15 @@ def register_user(db: Session, payload: UserCreate) -> User:
         updated_at=now,
     )
     add_user(db, user)
+    add_profile(
+        db,
+        UserProfile(
+            user=user,
+            content_focus=[],
+            created_at=now,
+            updated_at=now,
+        ),
+    )
     try:
         db.commit()
     except IntegrityError as error:

@@ -10,7 +10,10 @@ from inspire_flow_backend.data.base import Base
 from inspire_flow_backend.data.types import UTCDateTime
 
 if TYPE_CHECKING:
+    from inspire_flow_backend.data.models.agent_conversation import AgentConversation
     from inspire_flow_backend.data.models.auth_session import AuthSession
+    from inspire_flow_backend.data.models.user_memory import UserMemory
+    from inspire_flow_backend.data.models.user_profile import UserProfile
 
 
 class User(Base):
@@ -40,6 +43,22 @@ class User(Base):
         default=utc_now,
     )
     sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    profile: Mapped["UserProfile"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    conversations: Mapped[list["AgentConversation"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    memories: Mapped[list["UserMemory"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

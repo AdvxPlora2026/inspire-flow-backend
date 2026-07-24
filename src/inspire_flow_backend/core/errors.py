@@ -30,6 +30,54 @@ class InvalidSessionError(ApplicationError):
     headers = {"WWW-Authenticate": "Bearer"}
 
 
+class ContextStorageUnavailableError(ApplicationError):
+    status_code = 503
+    code = "context_storage_unavailable"
+    message = "Encrypted context storage is unavailable"
+
+
+class MemoryNotFoundError(ApplicationError):
+    status_code = 404
+    code = "memory_not_found"
+    message = "Memory was not found"
+
+
+class CredentialMemoryForbiddenError(ApplicationError):
+    status_code = 422
+    code = "credential_memory_forbidden"
+    message = "Credentials cannot be stored as memory"
+
+
+class ConversationNotFoundError(ApplicationError):
+    status_code = 404
+    code = "conversation_not_found"
+    message = "Conversation was not found"
+
+
+class ConversationArchivedError(ApplicationError):
+    status_code = 409
+    code = "conversation_archived"
+    message = "Conversation is archived"
+
+
+class ConversationBusyError(ApplicationError):
+    status_code = 409
+    code = "conversation_busy"
+    message = "Conversation already has an active run"
+
+
+class AgentUnavailableError(ApplicationError):
+    status_code = 503
+    code = "agent_unavailable"
+    message = "Agent model configuration is unavailable"
+
+
+class AgentRunFailedError(ApplicationError):
+    status_code = 502
+    code = "agent_run_failed"
+    message = "Agent could not complete the requested turn"
+
+
 def error_response(
     *,
     status_code: int,
