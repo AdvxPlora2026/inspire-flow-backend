@@ -26,6 +26,7 @@ testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
 
 [tool.ruff]
+exclude = [".trellis"]
 line-length = 100
 target-version = "py313"
 

@@ -1,0 +1,33 @@
+{
+  "id": "fastapi-bootstrap",
+  "name": "fastapi-bootstrap",
+  "title": "Bootstrap FastAPI application",
+  "description": "Create a uv-managed, layered FastAPI starter application with tests and repository hygiene.",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "FastAPI project initialization, uv environment management, layered source structure, tests, documentation, and .gitignore",
+  "package": null,
+  "priority": "P2",
+  "creator": "ariakage",
+  "assignee": "ariakage",
+  "createdAt": "2026-07-23",
+  "completedAt": "2026-07-23",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "pyproject.toml",
+    "uv.lock",
+    "src/inspire_flow_backend/",
+    "tests/",
+    "README.md",
+    ".gitignore"
+  ],
+  "notes": "",
+  "meta": {}
+}

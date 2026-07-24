@@ -2,8 +2,6 @@
 .agents/
 .codex/
 .code/
-.trellis/
-AGENTS.md
 
 # Python bytecode
 __pycache__/
