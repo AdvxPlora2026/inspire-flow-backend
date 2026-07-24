@@ -108,7 +108,7 @@ def test_project_lifecycle_and_normalized_public_shape(client: TestClient) -> No
         headers=authorization(token),
     )
     assert read.status_code == 200
-    assert read.json() == created
+    assert read.json() == {**created, "inspiration_count": 0}
 
     patched = client.patch(
         f"/api/v1/projects/{project_id}",

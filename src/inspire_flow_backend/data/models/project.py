@@ -10,6 +10,7 @@ from inspire_flow_backend.data.base import Base
 from inspire_flow_backend.data.types import UTCDateTime
 
 if TYPE_CHECKING:
+    from inspire_flow_backend.data.models.inspiration import Inspiration
     from inspire_flow_backend.data.models.user import User
 
 
@@ -49,3 +50,8 @@ class Project(Base):
         default=utc_now,
     )
     user: Mapped["User"] = relationship(back_populates="projects")
+    inspirations: Mapped[list["Inspiration"]] = relationship(
+        secondary="inspiration_projects",
+        back_populates="projects",
+        passive_deletes=True,
+    )

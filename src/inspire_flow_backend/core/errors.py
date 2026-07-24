@@ -9,6 +9,18 @@ class ApplicationError(Exception):
     code = "application_error"
     message = "The request could not be completed"
     headers: dict[str, str] | None = None
+    details: list[dict[str, object]] | None = None
+
+    def __init__(
+        self,
+        *,
+        message: str | None = None,
+        details: list[dict[str, object]] | None = None,
+    ) -> None:
+        if message is not None:
+            self.message = message
+        self.details = details
+        super().__init__(self.message)
 
 
 class NicknameConflictError(ApplicationError):
@@ -108,6 +120,30 @@ class ProjectNotFoundError(ApplicationError):
     message = "Project was not found"
 
 
+class InspirationNotFoundError(ApplicationError):
+    status_code = 404
+    code = "inspiration_not_found"
+    message = "Inspiration was not found"
+
+
+class InspirationAssociationRequiredError(ApplicationError):
+    status_code = 409
+    code = "inspiration_association_required"
+    message = "A non-inbox inspiration requires a project or source"
+
+
+class OrphanedInspirationsConfirmationRequiredError(ApplicationError):
+    status_code = 409
+    code = "orphaned_inspirations_confirmation_required"
+    message = "Deleting this resource would orphan inspirations"
+
+    def __init__(self, details: list[dict[str, object]]) -> None:
+        super().__init__(
+            message=(f"Deleting this resource would orphan {len(details)} inspiration(s)"),
+            details=details[:100],
+        )
+
+
 def error_response(
     *,
     status_code: int,
@@ -135,6 +171,7 @@ async def handle_application_error(
         status_code=exc.status_code,
         code=exc.code,
         message=exc.message,
+        details=exc.details,
         headers=exc.headers,
     )
 

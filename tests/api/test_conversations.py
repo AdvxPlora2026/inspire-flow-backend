@@ -107,6 +107,8 @@ def test_conversation_resource_crud_pagination_and_openapi(client: TestClient) -
     assert deleted.content == b""
     paths = client.get("/openapi.json").json()["paths"]
     assert "/api/v1/conversations/{conversation_id}/messages" in paths
+    message_operation = paths["/api/v1/conversations/{conversation_id}/messages"]["post"]
+    assert "persistent Agent session ID" in message_operation["description"]
 
 
 def test_new_login_session_continues_existing_conversation(

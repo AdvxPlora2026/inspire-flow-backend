@@ -15,6 +15,7 @@ CONTEXT_TABLES = {
 }
 STT_TABLES = {"transcription_jobs"}
 PROJECT_TABLES = {"projects"}
+INSPIRATION_TABLES = {"inspirations", "inspiration_projects"}
 
 
 def make_config(database_path: Path) -> Config:
@@ -71,6 +72,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         *CONTEXT_TABLES,
         *STT_TABLES,
         *PROJECT_TABLES,
+        *INSPIRATION_TABLES,
     } <= set(inspector.get_table_names())
     with engine.connect() as connection:
         assert (
@@ -161,6 +163,22 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "created_at",
         "updated_at",
     }
+    assert {column["name"] for column in inspector.get_columns("inspirations")} == {
+        "id",
+        "user_id",
+        "title",
+        "content",
+        "status",
+        "source_type",
+        "source_conversation_id",
+        "source_message_id",
+        "created_at",
+        "updated_at",
+    }
+    assert {column["name"] for column in inspector.get_columns("inspiration_projects")} == {
+        "inspiration_id",
+        "project_id",
+    }
 
     assert named_constraints(
         inspector,
@@ -189,6 +207,10 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "ck_transcription_jobs_status_valid",
         "ck_transcription_jobs_attempt_count_nonnegative",
     } <= named_constraints(inspector, "transcription_jobs", "get_check_constraints")
+    assert {
+        "ck_inspirations_status_valid",
+        "ck_inspirations_source_type_valid",
+    } <= named_constraints(inspector, "inspirations", "get_check_constraints")
 
     assert {index["name"] for index in inspector.get_indexes("agent_conversations")} == {
         "ix_agent_conversations_user_id_archived_at",
@@ -208,6 +230,15 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
     assert {index["name"] for index in inspector.get_indexes("projects")} == {
         "ix_projects_user_id_updated_at",
     }
+    assert {index["name"] for index in inspector.get_indexes("inspirations")} == {
+        "ix_inspirations_source_conversation_id",
+        "ix_inspirations_source_message_id",
+        "ix_inspirations_user_id_status_updated_at",
+        "ix_inspirations_user_id_updated_at",
+    }
+    assert {index["name"] for index in inspector.get_indexes("inspiration_projects")} == {
+        "ix_inspiration_projects_project_id_inspiration_id"
+    }
 
     expected_foreign_keys = {
         ("user_profiles", "user_id"): ("users", "CASCADE"),
@@ -218,6 +249,14 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         ("user_memories", "source_message_id"): ("agent_messages", "SET NULL"),
         ("transcription_jobs", "user_id"): ("users", "CASCADE"),
         ("projects", "user_id"): ("users", "CASCADE"),
+        ("inspirations", "user_id"): ("users", "CASCADE"),
+        ("inspirations", "source_conversation_id"): (
+            "agent_conversations",
+            "SET NULL",
+        ),
+        ("inspirations", "source_message_id"): ("agent_messages", "SET NULL"),
+        ("inspiration_projects", "inspiration_id"): ("inspirations", "CASCADE"),
+        ("inspiration_projects", "project_id"): ("projects", "CASCADE"),
     }
     for (table_name, column_name), (referred_table, on_delete) in expected_foreign_keys.items():
         matching = [
@@ -230,7 +269,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         assert matching[0]["options"]["ondelete"] == on_delete
 
     command.downgrade(config, BASE_REVISION)
-    assert (CONTEXT_TABLES | STT_TABLES | PROJECT_TABLES).isdisjoint(
+    assert (CONTEXT_TABLES | STT_TABLES | PROJECT_TABLES | INSPIRATION_TABLES).isdisjoint(
         sa.inspect(engine).get_table_names()
     )
     assert {"users", "auth_sessions"} <= set(sa.inspect(engine).get_table_names())
@@ -421,6 +460,62 @@ def test_project_icon_migration_preserves_existing_project_rows(
             connection.scalar(
                 sa.text("SELECT COUNT(*) FROM projects WHERE id = :id"),
                 {"id": project_id.hex},
+            )
+            == 1
+        )
+    engine.dispose()
+
+
+def test_user_profile_text_migration_preserves_existing_users(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "existing-user-profile-text.db"
+    config = make_config(database_path)
+    command.upgrade(config, "20260724_0007")
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
+    user_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO users (
+                    id, nickname, nickname_key, avatar_url, password_hash, created_at, updated_at
+                ) VALUES (
+                    :id, 'Profile Creator', 'profile-creator', NULL,
+                    'test-only-hash', :now, :now
+                )
+                """
+            ),
+            {"id": user_id.hex, "now": now},
+        )
+
+    command.upgrade(config, "head")
+
+    assert "profile_text" in {column["name"] for column in sa.inspect(engine).get_columns("users")}
+    with engine.begin() as connection:
+        assert (
+            connection.scalar(
+                sa.text("SELECT profile_text FROM users WHERE id = :id"),
+                {"id": user_id.hex},
+            )
+            is None
+        )
+        connection.execute(
+            sa.text("UPDATE users SET profile_text = :profile_text WHERE id = :id"),
+            {"id": user_id.hex, "profile_text": "偏好科技内容"},
+        )
+
+    command.downgrade(config, "20260724_0007")
+
+    assert "profile_text" not in {
+        column["name"] for column in sa.inspect(engine).get_columns("users")
+    }
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(
+                sa.text("SELECT COUNT(*) FROM users WHERE id = :id"),
+                {"id": user_id.hex},
             )
             == 1
         )

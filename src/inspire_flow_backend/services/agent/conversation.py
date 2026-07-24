@@ -98,6 +98,20 @@ async def run_conversation_turn(
             cipher=cipher,
         )
         await session.add_items([{"role": "user", "content": redacted_content}])
+        persisted_user_message = next(
+            (
+                message
+                for message in list_turn_messages(
+                    db,
+                    conversation_id,
+                    turn_id,
+                )
+                if message.role == "user"
+            ),
+            None,
+        )
+        if persisted_user_message is None:
+            raise AgentRunFailedError
         if conversation.title is None:
             conversation.title = redacted_content[:120]
             conversation.updated_at = utc_now()
@@ -121,7 +135,12 @@ async def run_conversation_turn(
         try:
             await runtime.conversation_agent.run(
                 [],
-                context=AgentRunContext(db=db, user_id=user.id),
+                context=AgentRunContext(
+                    db=db,
+                    user_id=user.id,
+                    conversation_id=conversation_id,
+                    source_message_id=persisted_user_message.id,
+                ),
                 session=session,
                 run_config=run_config,
             )

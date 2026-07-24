@@ -3,7 +3,7 @@ import importlib
 import json
 from datetime import UTC, datetime
 from typing import Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -15,6 +15,9 @@ from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.base import Base
 from inspire_flow_backend.data.database import create_database_engine
 from inspire_flow_backend.data.model_registry import register_models
+from inspire_flow_backend.data.models.agent_conversation import AgentConversation
+from inspire_flow_backend.data.models.agent_message import AgentMessage
+from inspire_flow_backend.data.models.inspiration import Inspiration
 from inspire_flow_backend.data.models.project import Project
 from inspire_flow_backend.data.models.user import User
 from inspire_flow_backend.services.agent.contracts import (
@@ -79,6 +82,33 @@ def test_agent_functions_are_defined_under_func_package() -> None:
         ],
         "inspire_flow_backend.services.agent.func.delete_project": [
             "build_delete_project_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.create_inspiration": [
+            "build_create_inspiration_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.list_inspirations": [
+            "build_list_inspirations_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.get_inspiration": [
+            "build_get_inspiration_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.update_inspiration": [
+            "build_update_inspiration_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.delete_inspiration": [
+            "build_delete_inspiration_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.add_inspiration_project": [
+            "build_add_inspiration_project_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.remove_inspiration_project": [
+            "build_remove_inspiration_project_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.update_current_user": [
+            "build_update_current_user_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.update_user_profile_text": [
+            "build_update_user_profile_text_tool",
         ],
         "inspire_flow_backend.services.agent.func.registry": [
             "build_agent_tools",
@@ -444,7 +474,7 @@ def test_project_tool_schemas_hide_owner_context() -> None:
     client, tools = build_tools()
 
     try:
-        project_tools = tools[3:]
+        project_tools = tools[3:8]
         assert [tool.name for tool in project_tools] == [
             "create_project",
             "list_projects",
@@ -456,8 +486,153 @@ def test_project_tool_schemas_hide_owner_context() -> None:
             properties = tool.params_json_schema.get("properties", {})
             assert "user_id" not in properties
             assert "ctx" not in properties
+        for tool in tools[8:]:
+            properties = tool.params_json_schema.get("properties", {})
+            assert "user_id" not in properties
+            assert "conversation_id" not in properties
+            assert "source_message_id" not in properties
+            assert "ctx" not in properties
     finally:
         asyncio.run(client.aclose())
+
+
+def test_user_tools_update_only_the_context_user_and_return_safe_results() -> None:
+    register_models()
+    engine = create_database_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    client, tools = build_tools()
+    try:
+        tools_by_name = {tool.name: tool for tool in tools}
+        assert {"update_current_user", "update_user_profile_text"} <= set(tools_by_name)
+        with factory() as db:
+            owner = add_user(db, "profile-tool-owner")
+            other = add_user(db, "profile-tool-other")
+            context = AgentRunContext(db=db, user_id=owner.id)
+
+            updated = invoke_project_tool(
+                tools_by_name["update_current_user"],
+                {
+                    "nickname": "Profile Tool Renamed",
+                    "avatar_url": "https://cdn.example.com/profile.png",
+                },
+                context,
+            )
+            assert updated["ok"] is True
+            assert updated["user"]["id"] == str(owner.id)
+            assert updated["user"]["nickname"] == "Profile Tool Renamed"
+            assert updated["user"]["avatar_url"] == "https://cdn.example.com/profile.png"
+            assert "password_hash" not in json.dumps(updated)
+
+            portrait = invoke_project_tool(
+                tools_by_name["update_user_profile_text"],
+                {"profile_text": "  偏好有数据支撑的科技视频  "},
+                context,
+            )
+            assert portrait == {
+                "ok": True,
+                "profile_text": "偏好有数据支撑的科技视频",
+            }
+            db.refresh(owner)
+            db.refresh(other)
+            assert owner.profile_text == "偏好有数据支撑的科技视频"
+            assert other.profile_text is None
+
+            cleared_avatar = invoke_project_tool(
+                tools_by_name["update_current_user"],
+                {"clear_avatar": True},
+                context,
+            )
+            assert cleared_avatar["user"]["avatar_url"] is None
+            cleared_portrait = invoke_project_tool(
+                tools_by_name["update_user_profile_text"],
+                {"clear_profile_text": True},
+                context,
+            )
+            assert cleared_portrait == {"ok": True, "profile_text": None}
+    finally:
+        asyncio.run(client.aclose())
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_user_tools_validate_conflicts_and_missing_context_safely() -> None:
+    register_models()
+    engine = create_database_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    client, tools = build_tools()
+    try:
+        tools_by_name = {tool.name: tool for tool in tools}
+        assert {"update_current_user", "update_user_profile_text"} <= set(tools_by_name)
+        with factory() as db:
+            owner = add_user(db, "user-tool-owner")
+            add_user(db, "user-tool-taken")
+            context = AgentRunContext(db=db, user_id=owner.id)
+
+            conflict = invoke_project_tool(
+                tools_by_name["update_current_user"],
+                {"nickname": "USER-TOOL-TAKEN"},
+                context,
+            )
+            assert conflict["error"]["code"] == "nickname_conflict"
+
+            invalid_user = invoke_project_tool(
+                tools_by_name["update_current_user"],
+                {
+                    "avatar_url": "https://cdn.example.com/profile.png",
+                    "clear_avatar": True,
+                },
+                context,
+            )
+            assert invalid_user["error"]["code"] == "invalid_user"
+
+            invalid_portrait = invoke_project_tool(
+                tools_by_name["update_user_profile_text"],
+                {
+                    "profile_text": "画像",
+                    "clear_profile_text": True,
+                },
+                context,
+            )
+            assert invalid_portrait["error"]["code"] == "invalid_user_profile_text"
+
+            too_long = invoke_project_tool(
+                tools_by_name["update_user_profile_text"],
+                {"profile_text": "x" * 8001},
+                context,
+            )
+            assert too_long["error"]["code"] == "invalid_user_profile_text"
+
+            credential = invoke_project_tool(
+                tools_by_name["update_user_profile_text"],
+                {"profile_text": "api_key=test-secret-placeholder"},
+                context,
+            )
+            assert credential["error"]["code"] == "invalid_user_profile_text"
+            db.refresh(owner)
+            assert owner.profile_text is None
+
+            for tool_name, arguments in [
+                ("update_current_user", {"nickname": "New Name"}),
+                ("update_user_profile_text", {"profile_text": "画像"}),
+            ]:
+                unavailable = invoke_project_tool(
+                    tools_by_name[tool_name],
+                    arguments,
+                    None,
+                )
+                assert unavailable == {
+                    "ok": False,
+                    "error": {
+                        "code": "user_context_unavailable",
+                        "message": "Authenticated user context is unavailable",
+                    },
+                }
+    finally:
+        asyncio.run(client.aclose())
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_project_tools_enforce_confirmation_and_user_isolation() -> None:
@@ -611,3 +786,236 @@ def test_project_tools_return_safe_context_error() -> None:
         }
     finally:
         asyncio.run(client.aclose())
+
+
+def test_inspiration_tools_persist_provenance_manage_links_and_require_delete_confirmation() -> (
+    None
+):
+    register_models()
+    engine = create_database_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    client, tools = build_tools()
+    try:
+        with factory() as db:
+            owner = add_user(db, "idea-tool-owner")
+            other = add_user(db, "idea-tool-other")
+            now = utc_now()
+            conversation = AgentConversation(
+                user_id=owner.id,
+                title="灵感对话",
+                summary_through_sequence=0,
+                next_sequence=2,
+                created_at=now,
+                updated_at=now,
+            )
+            message = AgentMessage(
+                conversation=conversation,
+                turn_id=uuid4(),
+                sequence=1,
+                item_type="message",
+                role="user",
+                payload_ciphertext="encrypted-test-payload",
+                created_at=now,
+            )
+            project = Project(
+                user_id=owner.id,
+                title="MPS 系列",
+                type="科技数码",
+                audience="Mac 用户",
+                summary="本地推理实测",
+                created_at=now,
+                updated_at=now,
+            )
+            db.add_all([conversation, message, project])
+            db.commit()
+            context = AgentRunContext(
+                db=db,
+                user_id=owner.id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+            )
+            other_context = AgentRunContext(db=db, user_id=other.id)
+            forged_context = AgentRunContext(
+                db=db,
+                user_id=other.id,
+                conversation_id=conversation.id,
+                source_message_id=message.id,
+            )
+
+            created = invoke_project_tool(
+                tools[8],
+                {
+                    "title": "MPS 速度对比",
+                    "content": "测试 MPS 与 CPU 的转写速度",
+                    "project_ids": [str(project.id)],
+                },
+                context,
+            )
+
+            assert created["ok"] is True
+            assert created["status"] == "created"
+            inspiration_id = created["inspiration"]["id"]
+            assert created["inspiration"]["source_type"] == "agent"
+            assert created["inspiration"]["source_conversation_id"] == str(conversation.id)
+            assert created["inspiration"]["source_message_id"] == str(message.id)
+            assert db.scalar(select(func.count()).select_from(Inspiration)) == 1
+
+            listed = invoke_project_tool(
+                tools[9],
+                {"query": "CPU"},
+                context,
+            )
+            assert listed["total"] == 1
+            assert listed["inspirations"][0]["id"] == inspiration_id
+            assert (
+                invoke_project_tool(
+                    tools[9],
+                    {},
+                    other_context,
+                )["total"]
+                == 0
+            )
+            forged = invoke_project_tool(
+                tools[8],
+                {"content": "伪造其他用户的来源"},
+                forged_context,
+            )
+            assert forged["error"]["code"] == "invalid_inspiration"
+
+            hidden = invoke_project_tool(
+                tools[10],
+                {"inspiration_id": inspiration_id},
+                other_context,
+            )
+            assert hidden["error"]["code"] == "inspiration_not_found"
+
+            updated = invoke_project_tool(
+                tools[11],
+                {
+                    "inspiration_id": inspiration_id,
+                    "status": "developing",
+                    "content": "加入温度和耗电对比",
+                },
+                context,
+            )
+            assert updated["inspiration"]["status"] == "developing"
+
+            removed = invoke_project_tool(
+                tools[14],
+                {
+                    "inspiration_id": inspiration_id,
+                    "project_id": str(project.id),
+                },
+                context,
+            )
+            assert removed["status"] == "removed"
+            added = invoke_project_tool(
+                tools[13],
+                {
+                    "inspiration_id": inspiration_id,
+                    "project_id": str(project.id),
+                },
+                context,
+            )
+            assert added["status"] == "added"
+
+            preview = invoke_project_tool(
+                tools[12],
+                {"inspiration_id": inspiration_id, "confirmed": False},
+                context,
+            )
+            assert preview["status"] == "confirmation_required"
+            assert preview["inspiration"] == {
+                "id": inspiration_id,
+                "title": "MPS 速度对比",
+            }
+            assert db.scalar(select(func.count()).select_from(Inspiration)) == 1
+
+            deleted = invoke_project_tool(
+                tools[12],
+                {"inspiration_id": inspiration_id, "confirmed": True},
+                context,
+            )
+            assert deleted == {
+                "ok": True,
+                "status": "deleted",
+                "inspiration_id": inspiration_id,
+            }
+            assert db.scalar(select(func.count()).select_from(Inspiration)) == 0
+    finally:
+        asyncio.run(client.aclose())
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_project_tool_links_inspirations_and_previews_orphan_cascade() -> None:
+    register_models()
+    engine = create_database_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    client, tools = build_tools()
+    try:
+        with factory() as db:
+            owner = add_user(db, "linked-project-tool")
+            now = utc_now()
+            inspiration = Inspiration(
+                user_id=owner.id,
+                title="待转项目",
+                content="把灵感推进成项目",
+                status="inbox",
+                source_type="manual",
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(inspiration)
+            db.commit()
+            context = AgentRunContext(db=db, user_id=owner.id)
+            arguments = {
+                "title": "灵感项目",
+                "type": "知识",
+                "audience": "创作者",
+                "summary": "从现有灵感创建",
+                "inspiration_ids": [str(inspiration.id)],
+                "confirmed": False,
+            }
+
+            preview = invoke_project_tool(tools[3], arguments, context)
+
+            assert preview["status"] == "confirmation_required"
+            assert preview["inspirations"] == [{"id": str(inspiration.id), "title": "待转项目"}]
+            created = invoke_project_tool(
+                tools[3],
+                {**arguments, "confirmed": True},
+                context,
+            )
+            project_id = created["project"]["id"]
+            db.refresh(inspiration)
+            assert [str(project.id) for project in inspiration.projects] == [project_id]
+
+            delete_preview = invoke_project_tool(
+                tools[7],
+                {"project_id": project_id, "confirmed": False},
+                context,
+            )
+            assert delete_preview["status"] == "confirmation_required"
+            assert delete_preview["orphaned_inspirations"] == [
+                {"id": str(inspiration.id), "title": "待转项目"}
+            ]
+
+            deleted = invoke_project_tool(
+                tools[7],
+                {
+                    "project_id": project_id,
+                    "confirmed": True,
+                    "delete_orphan_inspirations": True,
+                },
+                context,
+            )
+            assert deleted["status"] == "deleted"
+            assert db.get(Inspiration, inspiration.id) is None
+            assert db.get(Project, UUID(project_id)) is None
+    finally:
+        asyncio.run(client.aclose())
+        Base.metadata.drop_all(engine)
+        engine.dispose()

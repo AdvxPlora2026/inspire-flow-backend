@@ -21,7 +21,10 @@ from inspire_flow_backend.schemas.conversations import (
     ConversationPublic,
     ConversationUpdate,
 )
-from inspire_flow_backend.schemas.errors import ErrorResponse
+from inspire_flow_backend.schemas.errors import (
+    ErrorResponse,
+    ResourceImpactErrorResponse,
+)
 from inspire_flow_backend.services.agent.conversation import run_conversation_turn
 from inspire_flow_backend.services.agent.runtime import AgentRuntime
 from inspire_flow_backend.services.conversations import (
@@ -126,14 +129,21 @@ def patch_user_conversation(
     responses={
         401: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
+        409: {"model": ResourceImpactErrorResponse},
     },
 )
 def delete_user_conversation(
     conversation_id: UUID,
     authenticated: Annotated[AuthenticatedSession, Depends(get_current_session)],
     db: Annotated[Session, Depends(get_db_session)],
+    delete_orphan_inspirations: bool = False,
 ) -> Response:
-    delete_conversation(db, authenticated.user.id, conversation_id)
+    delete_conversation(
+        db,
+        authenticated.user.id,
+        conversation_id,
+        delete_orphan_inspirations=delete_orphan_inspirations,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -187,6 +197,7 @@ async def create_user_conversation_message(
     runtime: Annotated[AgentRuntime, Depends(get_agent_runtime)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AgentTurnPublic:
+    """Continue the persistent Agent session ID owned by the bearer-authenticated user."""
     turn = await run_conversation_turn(
         db,
         user=authenticated.user,

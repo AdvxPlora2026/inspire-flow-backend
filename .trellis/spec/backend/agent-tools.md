@@ -70,12 +70,24 @@ Registered tool names and order are stable:
 current_datetime(timezone_name="UTC")
 search_website(query, max_results=5)
 fetch_webpage(url)
-create_project(title, type, audience, summary, icon_url=None, confirmed=False)
+create_project(title, type, audience, summary, icon_url=None,
+               inspiration_ids=None, confirmed=False)
 list_projects(limit=50, offset=0)
 get_project(project_id)
 update_project(project_id, title=None, type=None, audience=None, summary=None,
                icon_url=None, clear_icon=False)
-delete_project(project_id, confirmed=False)
+delete_project(project_id, confirmed=False, delete_orphan_inspirations=False)
+create_inspiration(content, title=None, project_ids=None, status="inbox")
+list_inspirations(project_id=None, status=None, source_type=None, query=None,
+                  sort_by="updated_at", sort_order="desc", limit=50, offset=0)
+get_inspiration(inspiration_id)
+update_inspiration(inspiration_id, title=None, content=None, status=None,
+                   project_ids=None, clear_title=False)
+delete_inspiration(inspiration_id, confirmed=False)
+add_inspiration_project(inspiration_id, project_id)
+remove_inspiration_project(inspiration_id, project_id)
+update_current_user(nickname=None, avatar_url=None, clear_avatar=False)
+update_user_profile_text(profile_text=None, clear_profile_text=False)
 ```
 
 Agent-visible FunctionTool definitions live under
@@ -110,6 +122,13 @@ Success contracts:
 | `list_projects` | owned `projects`, `total`, `limit`, `offset` |
 | `get_project` / `update_project` | owned `project` |
 | `delete_project` | confirmation preview, or deleted `project_id` |
+| `create_inspiration` | immediately created owned `inspiration` |
+| `list_inspirations` | owned `inspirations`, `total`, `limit`, `offset` |
+| `get_inspiration` / `update_inspiration` | owned `inspiration` |
+| `delete_inspiration` | confirmation preview, or deleted `inspiration_id` |
+| inspiration-project link tools | mutation status plus both UUIDs |
+| `update_current_user` | safe current `user` projection |
+| `update_user_profile_text` | normalized nullable `profile_text` |
 
 Project FunctionTools receive `AgentRunContext(db, user_id)` through
 `RunContextWrapper`; this first parameter is removed from the model-visible
@@ -128,6 +147,38 @@ Project icon URLs are optional HTTP(S) values up to 2,048 characters. Project
 responses always include `icon_url`, using JSON `null` when unset.
 `update_project(clear_icon=true)` clears the icon; sending both a replacement
 URL and `clear_icon=true` returns `invalid_project`.
+
+Inspiration FunctionTools use the same trusted `AgentRunContext`; the durable
+conversation path also supplies optional `conversation_id` and
+`source_message_id`. These provenance fields and `user_id` are hidden from the
+model-visible schema. Direct Agent calls may omit provenance.
+
+A clear creative idea may call `create_inspiration` immediately and report the
+successful result. Ambiguous discussion requires a question before saving.
+Inspiration deletion remains preview-first and requires confirmation in a
+later user turn. Project deletion previews `orphaned_inspirations`; a confirmed
+cascade requires both `confirmed=true` and
+`delete_orphan_inspirations=true`.
+
+`create_project` accepts optional owned `inspiration_ids`. The confirmation
+preview lists them, and confirmed creation inserts the project and links in one
+transaction. Inspiration project-link tools are idempotent and never accept an
+owner ID from the model.
+
+User mutation FunctionTools also use `AgentRunContext.user_id` and never accept
+an owner ID from the model. `update_current_user` may change nickname or avatar
+only after the user explicitly asks; normalized nickname conflicts return a
+safe `nickname_conflict` tool result. `update_user_profile_text` replaces the
+complete durable summary or clears it, with an 8,000-character limit.
+
+The Agent may proactively refresh the profile summary from ordinary
+conversation only when the content is a durable fact explicitly stated by the
+user. It must preserve still-valid existing facts, never promote an inference
+to fact, and include sensitive information only after an explicit request to
+remember it. Credential-shaped content is always rejected. The saved profile
+text is included in the next turn's bounded, untrusted dynamic context but is
+intentionally absent from `UserPublic` and the public `/users/me` patch
+contract.
 
 The default search provider is DuckDuckGo's HTML page. On an expected provider
 failure or no parseable results, use the supported Chinese MediaWiki Action API
@@ -193,6 +244,13 @@ environment.
 | Missing authenticated project run context | `project_context_unavailable` |
 | Invalid project fields | `invalid_project` |
 | Unknown or foreign project UUID | `project_not_found` |
+| Missing authenticated inspiration run context | `inspiration_context_unavailable` |
+| Invalid inspiration fields or association state | `invalid_inspiration` |
+| Unknown or foreign inspiration UUID | `inspiration_not_found` |
+| Missing authenticated user run context | `user_context_unavailable` |
+| Invalid nickname/avatar mutation | `invalid_user` |
+| Duplicate normalized nickname | `nickname_conflict` |
+| Invalid or overlong profile summary | `invalid_user_profile_text` |
 | Unexpected runner, parser, or programming defect | Propagate; do not convert to tool data |
 
 Validate every redirect destination before requesting it. For every DNS answer,
@@ -250,6 +308,12 @@ as a compatibility shortcut.
   removal of blocked HTML elements.
 - Automated tests must not call an LLM, public DNS, or the public network.
   Keep real DuckDuckGo and webpage checks as separate best-effort smoke checks.
+- Test trusted inspiration provenance, cross-user isolation, clear-idea
+  creation, filters, full/incremental links, preview-first deletion, project
+  creation from inspirations, and orphan-cascade previews without a live model.
+- Test user-tool schemas without `user_id`, visible-profile explicit
+  authorization, profile-summary normalization/clearing, nickname conflicts,
+  missing context, and cross-user isolation.
 
 ### 7. Wrong vs Correct
 

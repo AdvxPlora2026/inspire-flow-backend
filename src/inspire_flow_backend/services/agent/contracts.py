@@ -20,6 +20,8 @@ class TextGenerator(Protocol):
 class AgentRunContext:
     db: Session
     user_id: UUID
+    conversation_id: UUID | None = None
+    source_message_id: UUID | None = None
 
 
 class AgentToolError(Exception):

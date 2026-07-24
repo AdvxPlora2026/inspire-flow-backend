@@ -96,6 +96,7 @@ def test_context_filter_is_user_scoped_bounded_and_ordered(
     cipher: ContextCipher,
 ) -> None:
     owner = add_user(db, "aria", "科技")
+    owner.profile_text = "偏好做有实测数据的科技视频"
     foreign = add_user(db, "beta", "美食")
     conversation = create_conversation(db, owner.id, ConversationCreate())
     conversation.summary_ciphertext = cipher.encrypt_text("已确认做一期本地模型视频")
@@ -183,6 +184,7 @@ def test_context_filter_is_user_scoped_bounded_and_ordered(
     assert system_text.index("用户资料") < system_text.index("长期记忆")
     assert system_text.index("长期记忆") < system_text.index("对话摘要")
     assert "科技" in system_text
+    assert "偏好做有实测数据的科技视频" in system_text
     assert "先给三个标题方向" in system_text
     assert "近期关注开源 AI" in system_text
     assert system_text.index("先给三个标题方向") < system_text.index("近期关注开源 AI")

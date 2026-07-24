@@ -9,6 +9,7 @@ from inspire_flow_backend.core.errors import (
     ConversationArchivedError,
     ConversationBusyError,
     ConversationNotFoundError,
+    OrphanedInspirationsConfirmationRequiredError,
 )
 from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.models.agent_conversation import AgentConversation
@@ -26,6 +27,7 @@ from inspire_flow_backend.schemas.conversations import (
     ConversationPublic,
     ConversationUpdate,
 )
+from inspire_flow_backend.services import inspirations as inspiration_service
 from inspire_flow_backend.services.agent.session_items import public_message_text
 
 
@@ -117,8 +119,21 @@ def delete_conversation(
     db: Session,
     user_id: UUID,
     conversation_id: UUID,
+    *,
+    delete_orphan_inspirations: bool = False,
 ) -> None:
     conversation = get_conversation(db, user_id, conversation_id)
+    orphan_candidates = inspiration_service.conversation_orphan_candidates(
+        db,
+        user_id,
+        conversation_id,
+    )
+    if orphan_candidates and not delete_orphan_inspirations:
+        raise OrphanedInspirationsConfirmationRequiredError(
+            inspiration_service.orphan_impact_details(orphan_candidates)
+        )
+    for inspiration in orphan_candidates:
+        db.delete(inspiration)
     source_memories = list(
         db.scalars(
             select(UserMemory).where(

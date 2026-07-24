@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from inspire_flow_backend.data.models.inspiration import inspiration_projects
 from inspire_flow_backend.data.models.project import Project
 
 
@@ -46,3 +47,15 @@ def list_projects(
 
 def delete_project(db: Session, project: Project) -> None:
     db.delete(project)
+
+
+def count_project_inspirations(
+    db: Session,
+    project_id: UUID,
+) -> int:
+    count = db.scalar(
+        select(func.count())
+        .select_from(inspiration_projects)
+        .where(inspiration_projects.c.project_id == project_id)
+    )
+    return int(count or 0)

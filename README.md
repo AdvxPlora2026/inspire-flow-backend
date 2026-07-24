@@ -67,7 +67,7 @@ response shape and `status: "unavailable"`.
 
 The REST API supports registration, login, creator profiles, encrypted
 long-term memories, durable Agent conversations, user-owned creative projects,
-and logout. See
+multi-project inspirations, and logout. See
 [HANDOFF_USERSYS.MD](docs/HANDOFF_USERSYS.MD) for authentication and profile
 examples, then [HANDOFF_AGENT_MEMORY.md](docs/HANDOFF_AGENT_MEMORY.md) for
 conversation and memory integration.
@@ -79,8 +79,16 @@ before creation and deletion. Projects may carry an optional HTTP(S) icon URL;
 unset icons are returned as `null`. See
 [Project API and Agent handoff](docs/HANDOFF_PROJECTS.md).
 
+Inspirations support an inbox workflow, manual or voice capture, Agent
+provenance, multi-project links, keyword search, filters, and safe deletion
+confirmation when a project or conversation would leave orphaned records. See
+[Inspiration API and Agent handoff](docs/HANDOFF_INSPIRATIONS.md).
+
 The InspireFlow Agent includes date/time, no-key web search, safe webpage
-fetching, local rolling context compression, and user-scoped memory. See
+fetching, local rolling context compression, user-scoped memory, and internal
+tools for explicitly requested identity changes and durable user-profile
+summaries. The conversation UUID returned by the API is the persistent Agent
+session ID and is always resolved together with the bearer-authenticated user. See
 [Agent service handoff](docs/prompt.md) for its prompt, tools, provider
 configuration, limits, and security boundaries.
 

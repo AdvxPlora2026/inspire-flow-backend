@@ -52,7 +52,7 @@ def get_project(
 The current tables are:
 
 ```text
-users(id, nickname, nickname_key, avatar_url, password_hash,
+users(id, nickname, nickname_key, avatar_url, profile_text, password_hash,
       created_at, updated_at)
 auth_sessions(id, user_id, token_hash, expires_at, created_at)
 user_profiles(user_id, bio, timezone, preferred_language, creator_identity,
@@ -73,6 +73,9 @@ transcription_jobs(id, user_id, status, language, use_itn,
                    completed_at)
 projects(id, user_id, title, type, audience, summary, icon_url,
          created_at, updated_at)
+inspirations(id, user_id, title, content, status, source_type,
+             source_conversation_id, source_message_id, created_at, updated_at)
+inspiration_projects(inspiration_id, project_id)
 ```
 
 ### 3. Contracts
@@ -81,6 +84,9 @@ projects(id, user_id, title, type, audience, summary, icon_url,
 - UUID identifiers use `Uuid(as_uuid=True, native_uuid=False)` and UUID v4
   defaults.
 - `users.nickname_key` and `auth_sessions.token_hash` are unique.
+- `users.profile_text` is a nullable, Agent-managed plaintext summary limited
+  to 8,000 characters at the service boundary. It supplements rather than
+  replaces the structured `user_profiles` row and is not part of `UserPublic`.
 - `auth_sessions.user_id` references `users.id` with `ON DELETE CASCADE`.
 - SQLite application connections enable `PRAGMA foreign_keys=ON` and use
   `check_same_thread=False`.
@@ -111,6 +117,20 @@ projects(id, user_id, title, type, audience, summary, icon_url,
   value must preserve `updated_at`.
 - `projects.icon_url` is nullable `VARCHAR(2048)`. Existing and unset icons
   read as `null`; clearing an icon writes `NULL`.
+- Inspirations belong to one user through `ON DELETE CASCADE`. Status is one
+  of `inbox`, `developing`, `converted`, or `archived`; source type is one of
+  `manual`, `agent`, or `voice`.
+- Inspiration titles and content are intentionally plaintext so SQLite can
+  perform keyword filtering and pagination. Database files and backups are
+  therefore readable creative assets and must be access-controlled.
+- `inspiration_projects` is a composite-primary-key many-to-many table. Both
+  foreign keys use `ON DELETE CASCADE`; services validate that both resources
+  share the authenticated owner before linking.
+- Inspiration source foreign keys use `ON DELETE SET NULL`. Project and
+  conversation services preflight deletion so a previously associated
+  inspiration is never silently left without every project and source.
+- An unassociated inspiration is valid only in the `inbox` workflow. Project
+  set replacement validates every UUID before mutating and commits once.
 
 ### 4. Validation & Error Matrix
 
@@ -125,6 +145,9 @@ projects(id, user_id, title, type, audience, summary, icon_url,
 | Downgrade `20260724_0002` | Destructively remove memories, messages, conversations, and profiles only |
 | Repository mutation succeeds | Do not commit; the calling service decides the transaction |
 | User is deleted | Cascade that user's transcription jobs |
+| Foreign or unknown inspiration UUID | Return the same `inspiration_not_found` behavior |
+| Foreign project is linked to an inspiration | Reject before mutation with `project_not_found` |
+| Project or conversation deletion would orphan inspirations | Roll back/no-op and require explicit cascade confirmation |
 | FastAPI and Celery connect concurrently | Both connections use foreign keys, WAL, and the configured busy timeout |
 
 ### 5. Good / Base / Bad Cases
@@ -155,6 +178,12 @@ projects(id, user_id, title, type, audience, summary, icon_url,
   preceding revision, and downgrade that removes only the project table.
 - Test the project-icon revision from `20260724_0005` in both directions and
   prove existing project rows survive with a null icon.
+- Test inspiration checks, indexes, user/source/project foreign keys, source
+  `SET NULL`, link cascades, upgrade from `20260724_0006`, and downgrade.
+- Test the nullable user-profile-text revision from `20260724_0007` in both
+  directions and prove existing user rows survive.
+- Test user-scoped inspiration CRUD, atomic full-set replacement, idempotent
+  link mutations, filters/search/sort/page order, and deletion impact.
 - Use file-backed temporary SQLite databases for API tests so independent
   connections do not split in-memory state.
 

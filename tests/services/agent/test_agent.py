@@ -75,6 +75,15 @@ def test_factory_builds_agent_with_deterministic_tools() -> None:
             "get_project",
             "update_project",
             "delete_project",
+            "create_inspiration",
+            "list_inspirations",
+            "get_inspiration",
+            "update_inspiration",
+            "delete_inspiration",
+            "add_inspiration_project",
+            "remove_inspiration_project",
+            "update_current_user",
+            "update_user_profile_text",
         ]
         assert service.agent.instructions == DEFAULT_AGENT_INSTRUCTIONS
         assert "不可信" in DEFAULT_AGENT_INSTRUCTIONS
@@ -167,6 +176,22 @@ def test_default_instructions_protect_context_and_external_operations() -> None:
         assert concept in DEFAULT_AGENT_INSTRUCTIONS
 
 
+def test_default_instructions_define_user_profile_mutation_boundaries() -> None:
+    expected_concepts = [
+        "用户明确提出",
+        "昵称",
+        "头像",
+        "用户画像",
+        "主动归纳",
+        "跨会话",
+        "敏感信息",
+        "不得把推测写成事实",
+    ]
+
+    for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+
 def test_default_instructions_require_project_mutation_confirmation() -> None:
     expected_concepts = [
         "项目草稿",
@@ -174,6 +199,21 @@ def test_default_instructions_require_project_mutation_confirmation() -> None:
         "单独一轮",
         "确认删除",
         "其他用户",
+    ]
+
+    for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+
+def test_default_instructions_define_inspiration_persistence_boundaries() -> None:
+    expected_concepts = [
+        "清晰、可识别的创作想法",
+        "自动保存",
+        "一般讨论",
+        "先询问是否保存",
+        "来源对话",
+        "项目关联",
+        "受影响灵感",
     ]
 
     for concept in expected_concepts:

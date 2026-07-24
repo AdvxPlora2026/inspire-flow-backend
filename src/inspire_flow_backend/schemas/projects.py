@@ -94,6 +94,10 @@ class ProjectPublic(ProjectFields):
     updated_at: datetime
 
 
+class ProjectDetail(ProjectPublic):
+    inspiration_count: int
+
+
 class ProjectPage(BaseModel):
     items: list[ProjectPublic]
     total: int

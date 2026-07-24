@@ -55,6 +55,7 @@ but they must not redefine response contracts or implement storage access.
 | `services/agent/project_drafting.py` | Structured, non-persisted project drafts from descriptions |
 | `services/agent/runtime.py` | Per-request model, Agent, compactor, extractor, and project-drafter lifecycle |
 | `services/projects.py` | User-scoped project lifecycle and draft failure mapping |
+| `services/inspirations.py` | User-scoped inspiration lifecycle, project links, search, and deletion impact |
 | `data/models/` | Internal SQLAlchemy persistence entities |
 | `data/model_registry.py` | Explicitly registers all related ORM models for narrow worker and migration entry points |
 | `data/repositories/` | SQLAlchemy queries and mutations without commits |
@@ -289,6 +290,11 @@ created_at: aware UTC datetime
 updated_at: aware UTC datetime
 ```
 
+`users.profile_text` is an internal Agent-managed field. It is injected into
+the bounded model context but remains absent from both `UserPublic` and the
+public `UserUpdate` request, while the structured `/users/me/profile` resource
+continues unchanged.
+
 `SessionCreated` adds `access_token`, literal `token_type: "bearer"`,
 `expires_at`, and `user: UserPublic`. The raw access token is returned only by
 successful login. Authenticated requests send
@@ -334,6 +340,9 @@ Registration never creates a session, and the project has no seeded account.
 - Durable Agent endpoints: assert all conversation and message operations are
   registered, resources are user-scoped, a new login continues an existing
   conversation, and CRUD-only requests never require model credentials.
+- Agent user tools: assert the model cannot supply `user_id`, visible identity
+  changes require explicit user intent, and internal profile text is not
+  exposed by the REST user resource.
 
 ### 7. Wrong vs Correct
 
@@ -369,3 +378,41 @@ def login(
 
 The route owns HTTP details, while the service owns authentication and
 persistence behavior.
+
+---
+
+## Scenario: Inspiration and Project Associations
+
+Authenticated inspiration endpoints remain under the configured `/api/v1`
+prefix:
+
+```text
+POST   /api/v1/inspirations
+GET    /api/v1/inspirations
+GET    /api/v1/inspirations/{inspiration_id}
+PATCH  /api/v1/inspirations/{inspiration_id}
+DELETE /api/v1/inspirations/{inspiration_id}
+PUT    /api/v1/inspirations/{inspiration_id}/projects/{project_id}
+DELETE /api/v1/inspirations/{inspiration_id}/projects/{project_id}
+GET    /api/v1/projects/{project_id}/inspirations
+```
+
+`api/routes/inspirations.py` owns HTTP dependency and query-parameter wiring;
+`schemas/inspirations.py` owns enums and payload/response contracts;
+`services/inspirations.py` owns validation and transactions; and
+`data/repositories/inspirations.py` owns SQLAlchemy queries without commits.
+
+Project detail returns `ProjectDetail` with `inspiration_count`. Complete
+inspiration rows are never embedded in project detail; callers use the
+project-scoped paginated endpoint. Unknown and foreign UUIDs share the same
+resource-specific 404.
+
+Project and conversation DELETE routes accept
+`delete_orphan_inspirations=false`. Services return a typed 409 impact response
+before mutation when deletion would remove the last project and source. A
+confirmed retry performs the target deletion and orphan cleanup in one
+transaction.
+
+Tests must cover authentication, user isolation, full and incremental project
+links, combined filters/search/sort/pagination, OpenAPI registration, and both
+blocked and confirmed deletion paths.

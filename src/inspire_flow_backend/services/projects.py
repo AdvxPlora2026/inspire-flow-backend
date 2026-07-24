@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from inspire_flow_backend.core.errors import (
     AgentRunFailedError,
+    OrphanedInspirationsConfirmationRequiredError,
     ProjectNotFoundError,
 )
 from inspire_flow_backend.core.time import utc_now
@@ -17,11 +18,13 @@ from inspire_flow_backend.data.models.project import Project
 from inspire_flow_backend.data.repositories import projects as project_repository
 from inspire_flow_backend.schemas.projects import (
     ProjectCreate,
+    ProjectDetail,
     ProjectDraft,
     ProjectPage,
     ProjectPublic,
     ProjectUpdate,
 )
+from inspire_flow_backend.services import inspirations as inspiration_service
 
 if TYPE_CHECKING:
     from inspire_flow_backend.services.agent.project_drafting import (
@@ -43,7 +46,14 @@ def create_project(
     db: Session,
     user_id: UUID,
     payload: ProjectCreate,
+    *,
+    inspiration_ids: list[UUID] | None = None,
 ) -> Project:
+    inspirations = inspiration_service.get_owned_inspirations(
+        db,
+        user_id,
+        inspiration_ids or [],
+    )
     now = utc_now()
     project = Project(
         user_id=user_id,
@@ -56,6 +66,9 @@ def create_project(
         updated_at=now,
     )
     project_repository.add_project(db, project)
+    for inspiration in inspirations:
+        inspiration.projects.append(project)
+        inspiration.updated_at = now
     db.commit()
     db.refresh(project)
     return project
@@ -70,6 +83,21 @@ def get_project(
     if project is None:
         raise ProjectNotFoundError
     return project
+
+
+def get_project_detail(
+    db: Session,
+    user_id: UUID,
+    project_id: UUID,
+) -> ProjectDetail:
+    project = get_project(db, user_id, project_id)
+    return ProjectDetail(
+        **ProjectPublic.model_validate(project).model_dump(),
+        inspiration_count=project_repository.count_project_inspirations(
+            db,
+            project.id,
+        ),
+    )
 
 
 def list_projects(
@@ -121,7 +149,20 @@ def delete_project(
     db: Session,
     user_id: UUID,
     project_id: UUID,
+    *,
+    delete_orphan_inspirations: bool = False,
 ) -> None:
     project = get_project(db, user_id, project_id)
+    orphan_candidates = inspiration_service.project_orphan_candidates(
+        db,
+        user_id,
+        project_id,
+    )
+    if orphan_candidates and not delete_orphan_inspirations:
+        raise OrphanedInspirationsConfirmationRequiredError(
+            inspiration_service.orphan_impact_details(orphan_candidates)
+        )
+    for inspiration in orphan_candidates:
+        db.delete(inspiration)
     project_repository.delete_project(db, project)
     db.commit()

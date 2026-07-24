@@ -20,6 +20,7 @@ from inspire_flow_backend.core.errors import (
 from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.base import Base
 from inspire_flow_backend.data.database import create_database_engine
+from inspire_flow_backend.data.model_registry import register_models
 from inspire_flow_backend.data.models.agent_conversation import AgentConversation
 from inspire_flow_backend.data.models.agent_message import AgentMessage
 from inspire_flow_backend.data.models.auth_session import AuthSession
@@ -131,6 +132,7 @@ class UnusedProjectDraftGenerator:
 
 @pytest.fixture
 def db() -> Generator[DatabaseSession]:
+    register_models()
     engine = create_database_engine("sqlite://")
     assert {
         AgentConversation.__tablename__,
@@ -280,6 +282,8 @@ def test_turn_orders_compaction_persistence_agent_extraction_and_unlock(
     assert agent.calls[0][1].trace_include_sensitive_data is False
     assert agent.contexts[0].db is db
     assert agent.contexts[0].user_id == user.id
+    assert agent.contexts[0].conversation_id == conversation.id
+    assert agent.contexts[0].source_message_id == result.user_message.id
     assert isinstance(agent.calls[0][1].call_model_input_filter, ContextInputFilter)
     assert "top-secret-value" not in str(agent.seen_history)
     assert "[REDACTED_CREDENTIAL]" in str(agent.seen_history)

@@ -65,6 +65,7 @@ def build_dynamic_context(
 
     profile_payload = {
         "nickname": user.nickname,
+        "profile_text": user.profile_text,
         "bio": profile.bio,
         "timezone": profile.timezone,
         "preferred_language": profile.preferred_language,

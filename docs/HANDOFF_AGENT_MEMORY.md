@@ -62,6 +62,10 @@ Authorization: Bearer <access-token>
 Bearer 登录会话只证明用户身份。Agent 对话是独立的持久化资源。注销、令牌过期
 或重新登录不会删除对话。
 
+对话响应中的 `id` 就是 Agent 的持久化 session ID。后续请求同时使用这个 ID
+和 Bearer 令牌定位对话：服务会按“当前令牌对应的用户 + session ID”查询，因此
+另一个用户即使拿到相同 ID，也只会收到 `404 conversation_not_found`。
+
 ## 创建和继续对话
 
 创建对话：
@@ -150,6 +154,28 @@ curl --fail-with-body \
 用户明确要求保存、后来编辑或置顶过的记忆继续保留，并标记原始来源已经删除，
 但不会保留被删除消息的原文。
 
+## Agent 用户资料与文本画像
+
+Agent 另有两个只作用于当前鉴权用户的内部工具：
+
+```text
+update_current_user(nickname=None, avatar_url=None, clear_avatar=False)
+update_user_profile_text(profile_text=None, clear_profile_text=False)
+```
+
+工具参数不接受 `user_id`。昵称和头像只有在用户明确要求修改时才能写入；普通
+聊天不会自动改名或替换头像。
+
+长期文本画像保存在 `users.profile_text`，最多 8000 个字符。Agent 可以从普通
+对话中主动归纳用户明确表达、可跨会话复用的信息，并在后续对话中读取。模型推测
+不能写成事实；敏感信息只有在用户明确要求记住时才能加入。每次更新会替换完整
+画像，所以 Agent 会结合现有画像保留仍然有效的信息。密码、登录令牌、API key、
+私钥和恢复码无论用户如何要求都不会写入画像。
+
+`profile_text` 是 Agent 内部上下文，不会出现在 `GET /api/v1/users/me`，也不能
+通过 `PATCH /api/v1/users/me` 直接修改。原有
+`GET/PATCH /api/v1/users/me/profile` 结构化创作者资料保持不变。
+
 ## 长期记忆
 
 手工创建记忆：
@@ -220,3 +246,6 @@ DELETE /api/v1/users/me/memories/{memory_id}
 `20260724_0002` 会创建创作者资料、对话、消息和记忆表，并为已有用户回填空
 资料。降级到 `20260723_0001` 会删除这四张表及其中数据，是破坏性操作；执行前
 必须备份数据库和加密密钥。
+
+`20260724_0008` 会给 `users` 增加可为空的 `profile_text`。升级不会回填或修改
+现有用户；降级到 `20260724_0007` 会删除该列及其中画像文本。

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import String, Uuid
+from sqlalchemy import String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from inspire_flow_backend.core.time import utc_now
@@ -12,6 +12,7 @@ from inspire_flow_backend.data.types import UTCDateTime
 if TYPE_CHECKING:
     from inspire_flow_backend.data.models.agent_conversation import AgentConversation
     from inspire_flow_backend.data.models.auth_session import AuthSession
+    from inspire_flow_backend.data.models.inspiration import Inspiration
     from inspire_flow_backend.data.models.project import Project
     from inspire_flow_backend.data.models.transcription_job import TranscriptionJob
     from inspire_flow_backend.data.models.user_memory import UserMemory
@@ -33,6 +34,7 @@ class User(Base):
         unique=True,
     )
     avatar_url: Mapped[str | None] = mapped_column(String(2048))
+    profile_text: Mapped[str | None] = mapped_column(Text)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
@@ -71,6 +73,11 @@ class User(Base):
         passive_deletes=True,
     )
     projects: Mapped[list["Project"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    inspirations: Mapped[list["Inspiration"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

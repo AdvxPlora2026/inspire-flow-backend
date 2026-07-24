@@ -105,6 +105,10 @@ curl -sS "$API_BASE_URL/projects/$PROJECT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
+项目详情比创建、列表和修改响应多一个 `inspiration_count` 字段，用于表示当前关联灵感数量。完整灵感数据通过
+`GET /api/v1/projects/{project_id}/inspirations` 分页获取，具体见
+`docs/HANDOFF_INSPIRATIONS.md`。
+
 ## 5. 修改和删除
 
 修改时只提交需要变化的字段。必填内容字段不能传 `null`；
@@ -124,14 +128,21 @@ curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
   -d '{"icon_url":null}'
 ```
 
-删除成功返回空的 `204`：
+没有孤立灵感影响时，删除成功返回空的 `204`：
 
 ```bash
 curl -i -X DELETE "$API_BASE_URL/projects/$PROJECT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-REST 删除本身是直接操作，产品界面应在发请求前向用户确认。
+如果删除会让某些灵感失去最后一个项目和来源，接口返回
+`409 orphaned_inspirations_confirmation_required` 和受影响灵感列表。产品界面展示影响并取得确认后，使用：
+
+```bash
+curl -i -X DELETE \
+  "$API_BASE_URL/projects/$PROJECT_ID?delete_orphan_inspirations=true" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
 
 ## 6. Agent 项目工具
 
@@ -149,6 +160,9 @@ delete_project
 
 `create_project` 可以接收 `icon_url`。`update_project` 可以传新的
 `icon_url`，或用 `clear_icon=true` 清空图标。它会直接修改用户明确指定的字段。查询外部用户或不存在的 UUID 都只返回安全的 `project_not_found`，不会暴露项目是否真实存在。
+
+`create_project` 还可以接收 `inspiration_ids`。预览会列出将关联的灵感，用户确认后，项目与这些关联在一个事务中创建。`delete_project` 的预览会列出 `orphaned_inspirations`；只有用户明确确认影响后，才能同时传
+`confirmed=true` 和 `delete_orphan_inspirations=true`。
 
 ## 7. 错误约定
 
@@ -169,6 +183,7 @@ REST 错误统一使用：
 | --- | --- | --- |
 | `401` | `invalid_session` | 缺少、过期或无效的 Bearer 凭据 |
 | `404` | `project_not_found` | 项目不存在，或不属于当前用户 |
+| `409` | `orphaned_inspirations_confirmation_required` | 删除会产生孤立灵感，需要展示影响并重试确认 |
 | `422` | `validation_error` | 请求字段缺失、为空、超限或包含未知字段 |
 | `502` | `agent_run_failed` | 模型未能生成有效草稿 |
 | `503` | `agent_unavailable` | 模型配置不完整 |

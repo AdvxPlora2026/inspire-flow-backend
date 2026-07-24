@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel
 
 
@@ -15,3 +17,18 @@ class ErrorBody(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorBody
+
+
+class ResourceImpactDetail(BaseModel):
+    id: UUID
+    title: str | None
+
+
+class ResourceImpactErrorBody(BaseModel):
+    code: str
+    message: str
+    details: list[ResourceImpactDetail]
+
+
+class ResourceImpactErrorResponse(BaseModel):
+    error: ResourceImpactErrorBody

@@ -62,6 +62,19 @@ def get_latest_message(
     )
 
 
+def get_message(
+    db: Session,
+    conversation_id: UUID,
+    message_id: UUID,
+) -> AgentMessage | None:
+    return db.scalar(
+        select(AgentMessage).where(
+            AgentMessage.id == message_id,
+            AgentMessage.conversation_id == conversation_id,
+        )
+    )
+
+
 def list_turn_messages(
     db: Session,
     conversation_id: UUID,

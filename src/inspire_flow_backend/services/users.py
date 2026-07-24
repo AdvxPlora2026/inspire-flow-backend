@@ -1,6 +1,9 @@
+from uuid import UUID
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from inspire_flow_backend.core.context_security import redact_credentials
 from inspire_flow_backend.core.errors import NicknameConflictError
 from inspire_flow_backend.core.identity import nickname_key
 from inspire_flow_backend.core.security import hash_password
@@ -8,8 +11,16 @@ from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.models.user import User
 from inspire_flow_backend.data.models.user_profile import UserProfile
 from inspire_flow_backend.data.repositories.profiles import add_profile
-from inspire_flow_backend.data.repositories.users import add_user
-from inspire_flow_backend.schemas.users import UserCreate, UserUpdate
+from inspire_flow_backend.data.repositories.users import add_user, get_user_by_id
+from inspire_flow_backend.schemas.users import (
+    UserCreate,
+    UserProfileTextUpdate,
+    UserUpdate,
+)
+
+
+class ProfileTextContainsCredentialError(Exception):
+    pass
 
 
 def register_user(db: Session, payload: UserCreate) -> User:
@@ -66,5 +77,35 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
     except IntegrityError as error:
         db.rollback()
         raise NicknameConflictError from error
+    db.refresh(user)
+    return user
+
+
+def update_user_by_id(
+    db: Session,
+    user_id: UUID,
+    payload: UserUpdate,
+) -> User | None:
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        return None
+    return update_user(db, user, payload)
+
+
+def update_user_profile_text(
+    db: Session,
+    user_id: UUID,
+    payload: UserProfileTextUpdate,
+) -> User | None:
+    if payload.profile_text is not None and redact_credentials(payload.profile_text).was_redacted:
+        raise ProfileTextContainsCredentialError
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        return None
+    if user.profile_text == payload.profile_text:
+        return user
+    user.profile_text = payload.profile_text
+    user.updated_at = utc_now()
+    db.commit()
     db.refresh(user)
     return user

@@ -52,6 +52,25 @@ class UserUpdate(BaseModel):
         return self
 
 
+class UserProfileTextUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_text: str | None = Field(default=None, max_length=8000)
+
+    @field_validator("profile_text")
+    @classmethod
+    def normalize_profile_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def require_supplied_field(self) -> Self:
+        if "profile_text" not in self.model_fields_set:
+            raise ValueError("Profile text field is required")
+        return self
+
+
 class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
