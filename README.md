@@ -66,10 +66,17 @@ Missing optional model or Injective configuration returns `200` with
 response shape and `status: "unavailable"`.
 
 The REST API supports registration, login, creator profiles, encrypted
-long-term memories, durable Agent conversations, and logout. See
+long-term memories, durable Agent conversations, user-owned creative projects,
+and logout. See
 [HANDOFF_USERSYS.MD](docs/HANDOFF_USERSYS.MD) for authentication and profile
 examples, then [HANDOFF_AGENT_MEMORY.md](docs/HANDOFF_AGENT_MEMORY.md) for
 conversation and memory integration.
+
+Projects can be entered manually or prepared as an editable, unsaved draft
+from a natural-language description. The Agent can also list, inspect, edit,
+create, and delete the current user's projects with explicit confirmation
+before creation and deletion. See
+[Project API and Agent handoff](docs/HANDOFF_PROJECTS.md).
 
 The InspireFlow Agent includes date/time, no-key web search, safe webpage
 fetching, local rolling context compression, and user-scoped memory. See
@@ -95,7 +102,7 @@ REST usage.
     │   └── routes/
     ├── core/         # Configuration, identity, security, and shared errors
     ├── data/         # SQLAlchemy persistence boundary
-    │   ├── models/   # Users, profiles, conversations, messages, and memories
+    │   ├── models/   # Users, projects, conversations, messages, and memories
     │   └── repositories/ # Database access implementations
     ├── schemas/      # Pydantic request and response contracts
     ├── services/     # Application behavior, including users and Agent tools

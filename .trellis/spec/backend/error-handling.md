@@ -82,6 +82,7 @@ Validation errors may add `error.details`. Each detail contains only
 | Oversized audio upload | `413` | `audio_too_large` | None |
 | Unsupported audio declaration | `415` | `unsupported_audio_type` | None |
 | Foreign or unknown transcription | `404` | `transcription_not_found` | None |
+| Foreign or unknown project | `404` | `project_not_found` | None |
 | Other Starlette `HTTPException` | Exception status | `http_error` | Preserve exception headers |
 
 Unknown-nickname and wrong-password login attempts must return the same body.
@@ -142,6 +143,8 @@ shared handler produce the stable envelope.
 - `RequestValidationError`: converted by the FastAPI boundary, not raised by
   services.
 - Agent resource errors never reveal whether a foreign identifier exists.
+- Project lookup, update, and delete use the same `project_not_found` response
+  for unknown and foreign UUIDs.
 - Known SDK, provider, and transport failures map to `agent_run_failed`
   without exposing the upstream exception. Unexpected programming defects
   remain visible to the internal caller.

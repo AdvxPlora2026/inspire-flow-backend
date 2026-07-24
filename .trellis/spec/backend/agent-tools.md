@@ -27,6 +27,7 @@ class AgentService:
         max_turns: int | None = None,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> RunResult: ...
 
     async def aclose(self) -> None: ...
@@ -69,6 +70,11 @@ Registered tool names and order are stable:
 current_datetime(timezone_name="UTC")
 search_website(query, max_results=5)
 fetch_webpage(url)
+create_project(title, type, audience, summary, confirmed=False)
+list_projects(limit=50, offset=0)
+get_project(project_id)
+update_project(project_id, title=None, type=None, audience=None, summary=None)
+delete_project(project_id, confirmed=False)
 ```
 
 Agent-visible FunctionTool definitions live under
@@ -99,6 +105,23 @@ Success contracts:
 | `current_datetime` | `ok`, `timezone`, `iso_datetime`, `unix_timestamp` |
 | `search_website` | `ok`, normalized `query`, selected `provider`, bounded `results[{title,url,snippet}]` |
 | `fetch_webpage` | `ok`, final `url`, `content_type`, optional `title`, `text`, `truncated` |
+| `create_project` | confirmation status plus `draft`, or created `project` |
+| `list_projects` | owned `projects`, `total`, `limit`, `offset` |
+| `get_project` / `update_project` | owned `project` |
+| `delete_project` | confirmation preview, or deleted `project_id` |
+
+Project FunctionTools receive `AgentRunContext(db, user_id)` through
+`RunContextWrapper`; this first parameter is removed from the model-visible
+schema. Never accept `user_id` as a tool argument. Missing context returns
+`project_context_unavailable`; unknown and foreign UUIDs both return
+`project_not_found`.
+
+Creation is draft-first. `confirmed=false` validates and displays the draft
+without inserting a row. A later explicit user confirmation permits
+`confirmed=true`. Deletion likewise previews the UUID and title first, then
+requires explicit confirmation in a separate user turn before
+`confirmed=true`. Do not use the SDK's resumable approval mechanism until the
+HTTP conversation API persists and resumes suspended runs.
 
 The default search provider is DuckDuckGo's HTML page. On an expected provider
 failure or no parseable results, use the supported Chinese MediaWiki Action API
@@ -125,9 +148,8 @@ assistant for Bilibili creators. They must:
   artifacts; storyboards identify each shot's visual, sound, duration, and
   shooting note, while scripts distinguish narration, dialogue, visual
   direction, and sound;
-- assign an idea only when a project-write capability is actually available;
-  otherwise provide a project-ready record and state that it has not been
-  saved;
+- prepare a project draft before saving and require explicit confirmation
+  before project creation or deletion;
 - cover budget, delivery scope, schedule, revisions, licensing, credits, and
   collaborator revenue sharing for commercial projects;
 - distinguish confirmed facts, suggestions, assumptions, and pending
@@ -137,9 +159,9 @@ assistant for Bilibili creators. They must:
 
 Keep these product instructions in the single
 `DEFAULT_AGENT_INSTRUCTIONS` constant. Tests should assert the stable concepts,
-not duplicate the entire prompt. `AgentService.run()` has no separate context
-parameter; callers include dynamic project context in the existing prompt
-argument.
+not duplicate the entire prompt. Durable callers pass authenticated ownership
+in `AgentRunContext`; dynamic creative context remains in the filtered model
+input.
 
 The factory-created HTTP client uses `follow_redirects=False`,
 `trust_env=False`, configured timeouts, and the configured User-Agent. The
@@ -162,6 +184,9 @@ environment.
 | Final media type is not HTML, XHTML, plain text, or JSON | `unsupported_content_type` |
 | Decoded body exceeds the byte budget | `response_too_large` |
 | Fetch connection, timeout, missing redirect location, or bad status | `fetch_unavailable` |
+| Missing authenticated project run context | `project_context_unavailable` |
+| Invalid project fields | `invalid_project` |
+| Unknown or foreign project UUID | `project_not_found` |
 | Unexpected runner, parser, or programming defect | Propagate; do not convert to tool data |
 
 Validate every redirect destination before requesting it. For every DNS answer,

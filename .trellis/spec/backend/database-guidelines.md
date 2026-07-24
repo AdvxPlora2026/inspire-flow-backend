@@ -42,6 +42,11 @@ def get_session_by_token_hash(
     db: Session,
     token_hash: str,
 ) -> AuthSession | None: ...
+def get_project(
+    db: Session,
+    user_id: UUID,
+    project_id: UUID,
+) -> Project | None: ...
 ```
 
 The current tables are:
@@ -66,6 +71,7 @@ transcription_jobs(id, user_id, status, language, use_itn,
                    detected_language, duration_seconds, error_code,
                    attempt_count, created_at, updated_at, started_at,
                    completed_at)
+projects(id, user_id, title, type, audience, summary, created_at, updated_at)
 ```
 
 ### 3. Contracts
@@ -97,6 +103,11 @@ transcription_jobs(id, user_id, status, language, use_itn,
   transcripts, spool paths, and native exceptions are not database fields.
 - Transcription emotion/event metadata is a versioned JSON document encrypted
   into `analysis_ciphertext`; existing rows may keep this column null.
+- Projects belong to one user through `ON DELETE CASCADE`. Every single-project
+  query includes both `project_id` and `user_id`; lists order by
+  `updated_at DESC, id DESC` through `ix_projects_user_id_updated_at`.
+- Project services commit once per mutation. A patch that does not change a
+  value must preserve `updated_at`.
 
 ### 4. Validation & Error Matrix
 
@@ -137,6 +148,8 @@ transcription_jobs(id, user_id, status, language, use_itn,
   behavior, profile backfill, and downgrade from the context revision.
 - Test encrypted transcription storage, user cascade, and the reversible STT
   migration.
+- Test project columns, owner cascade, composite index, upgrade from the
+  preceding revision, and downgrade that removes only the project table.
 - Use file-backed temporary SQLite databases for API tests so independent
   connections do not split in-memory state.
 
