@@ -53,6 +53,22 @@ prepared → broadcast → confirmed / failed
 **未从网络查到确认前不会报 `confirmed`。** 读取 proof 时会补发失败可重试的交易并向
 网络刷新确认状态，因此 proof 可能把 `broadcast` 更新为 `confirmed`。
 
+### 确认判定与端点差异
+
+确认状态按以下顺序判定：
+
+1. **回执优先**：先查交易回执（`eth_getTransactionReceipt`）。拿到回执时，按其
+   执行结果给出 `confirmed`（`status == 1`）或 `failed`（回执显示 revert）。
+2. **nonce 递进兜底**：部分 Injective testnet JSON-RPC 端点（如
+   `k8s.testnet.json-rpc.injective.network`）不按交易哈希建立索引，`eth_getTransactionReceipt`
+   对已上链交易也长期返回空。此时回退到 nonce 判定——当发送账户已确认的 nonce
+   超过该交易的 nonce，即说明该交易已被区块打包，标记为 `confirmed`。
+
+> 语义提示：走 nonce 兜底时，`confirmed` 表示“已被区块打包”，而非“回执确认执行成功”。
+> 本服务上链的是 1 wei 自转账（仅携带 memo 摘要），实际不会 revert；在支持哈希回执
+> 的端点（如 mainnet）上仍以回执的真实执行结果为准。交易哈希可在 Blockscout 浏览器
+> 用地址维度核验，即便该端点按哈希直查为空。
+
 ## 4. 创建任务
 
 ```bash

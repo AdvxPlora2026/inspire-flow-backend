@@ -55,6 +55,7 @@ class ChainBroadcast:
     chain_id: str
     transaction_hash: str
     explorer_url: str
+    nonce: int
 
 
 class ChainBroadcastError(Exception):
@@ -75,7 +76,9 @@ class InjectiveProvider(Protocol):
         """Broadcast a transaction carrying the memo and return chain facts."""
         ...
 
-    def get_transaction_status(self, transaction_hash: str) -> ChainConfirmation:
+    def get_transaction_status(
+        self, transaction_hash: str, *, nonce: int | None = None
+    ) -> ChainConfirmation:
         """Query the network for the confirmation state of a transaction."""
         ...
 
@@ -120,11 +123,12 @@ class EvmJsonRpcInjectiveProvider:
         try:
             web3 = Web3(Web3.HTTPProvider(self._rpc_url, request_kwargs={"timeout": 30}))
             account = Account.from_key(self._private_key)
+            nonce = web3.eth.get_transaction_count(account.address, "pending")
             transaction = {
                 "from": account.address,
                 "to": account.address,
                 "value": self._value_wei,
-                "nonce": web3.eth.get_transaction_count(account.address, "pending"),
+                "nonce": nonce,
                 "chainId": web3.eth.chain_id,
                 "gasPrice": web3.eth.gas_price,
                 "data": memo.encode("utf-8"),
@@ -145,24 +149,39 @@ class EvmJsonRpcInjectiveProvider:
             chain_id=self._preset.native_chain_id,
             transaction_hash=transaction_hash,
             explorer_url=f"{self._explorer_base_url}/tx/{transaction_hash}",
+            nonce=nonce,
         )
 
-    def get_transaction_status(self, transaction_hash: str) -> ChainConfirmation:
+    def get_transaction_status(
+        self, transaction_hash: str, *, nonce: int | None = None
+    ) -> ChainConfirmation:
         try:
+            from eth_account import Account
             from web3 import Web3
             from web3.exceptions import TransactionNotFound
         except ImportError:
             return "broadcast"
+        web3 = Web3(Web3.HTTPProvider(self._rpc_url, request_kwargs={"timeout": 30}))
         try:
-            web3 = Web3(Web3.HTTPProvider(self._rpc_url, request_kwargs={"timeout": 30}))
             receipt = web3.eth.get_transaction_receipt(transaction_hash)
         except TransactionNotFound:
-            return "broadcast"
+            receipt = None
         except Exception:  # noqa: BLE001 - network failures leave the tx pending
             return "broadcast"
-        if receipt is None:
+        if receipt is not None:
+            return "confirmed" if receipt.get("status") == 1 else "failed"
+        # Some Injective EVM RPC endpoints do not index transactions by hash, so
+        # the receipt is never returned even after inclusion. Fall back to nonce
+        # progression: once the sender's mined nonce passes this transaction's
+        # nonce, the transaction has been included in a block.
+        if nonce is None:
             return "broadcast"
-        return "confirmed" if receipt.get("status") == 1 else "failed"
+        try:
+            account = Account.from_key(self._private_key)
+            mined = web3.eth.get_transaction_count(account.address, "latest")
+        except Exception:  # noqa: BLE001 - transient failures leave the tx pending
+            return "broadcast"
+        return "confirmed" if mined > nonce else "broadcast"
 
 
 def create_injective_provider(settings: Settings) -> InjectiveProvider | None:

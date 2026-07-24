@@ -276,6 +276,7 @@ def _attempt_broadcast(
     transaction.status = "broadcast"
     transaction.chain_id = broadcast.chain_id
     transaction.transaction_hash = broadcast.transaction_hash
+    transaction.nonce = broadcast.nonce
     transaction.explorer_url = broadcast.explorer_url
     transaction.failure_reason = None
     transaction.retryable = None
@@ -296,7 +297,9 @@ def _refresh_transactions(
         ):
             _attempt_broadcast(db, provider, transaction)
         if transaction.status == "broadcast" and transaction.transaction_hash is not None:
-            confirmation = provider.get_transaction_status(transaction.transaction_hash)
+            confirmation = provider.get_transaction_status(
+                transaction.transaction_hash, nonce=transaction.nonce
+            )
             if confirmation == "confirmed":
                 transaction.status = "confirmed"
                 transaction.confirmed_at = utc_now()

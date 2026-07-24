@@ -71,9 +71,12 @@ class FakeInjectiveProvider:
             chain_id=self.chain_id,
             transaction_hash=transaction_hash,
             explorer_url=(f"https://testnet.blockscout.injective.network/tx/{transaction_hash}"),
+            nonce=self._counter - 1,
         )
 
-    def get_transaction_status(self, transaction_hash: str) -> ChainConfirmation:
+    def get_transaction_status(
+        self, transaction_hash: str, *, nonce: int | None = None
+    ) -> ChainConfirmation:
         return self.confirmations.get(transaction_hash, "confirmed")
 
 

@@ -145,6 +145,7 @@ class ChainTransaction(Base):
     network: Mapped[str] = mapped_column(String(16), nullable=False)
     chain_id: Mapped[str | None] = mapped_column(String(32))
     transaction_hash: Mapped[str | None] = mapped_column(String(128))
+    nonce: Mapped[int | None] = mapped_column(Integer)
     explorer_url: Mapped[str | None] = mapped_column(String(2048))
     memo: Mapped[str] = mapped_column(Text, nullable=False)
     artifact_sha256: Mapped[str | None] = mapped_column(String(64))
