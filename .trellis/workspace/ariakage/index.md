@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-07-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~348 | Active |
+| `journal-1.md` | ~382 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-07-24 | SenseVoice structured emotion metadata | `af4a47a`, `a8659f5` | `agent/stt-emotion-metadata-trellis` |
 | 10 | 2026-07-24 | Isolated SenseVoice STT worker | `ca0f202`, `4b0f171` | `main` |
 | 9 | 2026-07-24 | Backend dependency health checks | `3dacdd2` | `main` |
 | 8 | 2026-07-24 | Provider-neutral model environment | `1327600` | `main` |

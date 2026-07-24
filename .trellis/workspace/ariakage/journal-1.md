@@ -346,3 +346,37 @@ Added authenticated asynchronous transcription jobs, encrypted SQLite results, a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: SenseVoice structured emotion metadata
+
+**Date**: 2026-07-24
+**Task**: SenseVoice structured emotion metadata
+**Branch**: `agent/stt-emotion-metadata-trellis`
+
+### Summary
+
+Added authenticated structured STT emotion and audio-event metadata with encrypted persistence, fixed isolated worker ORM registration, validated real MPS inference, and started tracking Trellis plus AGENTS.md.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af4a47a` | (see git log) |
+| `a8659f5` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
