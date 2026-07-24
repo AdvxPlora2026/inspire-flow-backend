@@ -1,11 +1,19 @@
 # Agent 服务接入与工具说明
 
-当前 Agent 是后端内部 Python 服务，没有对应的 FastAPI 路由，也不会保存对话
-历史。调用方负责决定模型、请求入口和结果如何返回给客户端。
+InspireFlow Agent 同时提供内部 Python 调用边界和
+`/api/v1/conversations` REST 接口。REST 接口会把对话条目、滚动摘要和长期记忆
+加密保存在 SQLite 中，并按登录用户隔离。直接调用 `create_agent_service()` 仍是
+无状态模式，只有显式传入 Agents SDK `Session` 时才会使用会话历史。
+
+REST 运行时从 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 和
+`DEEPSEEK_BASE_URL` 读取 OpenAI 兼容模型配置。不要把真实密钥写进文档、日志或
+Git。完整的 HTTP 接入方式见
+[HANDOFF_AGENT_MEMORY.md](HANDOFF_AGENT_MEMORY.md)。
 
 ## 最小调用方式
 
-OpenAI Agents SDK 默认从进程环境读取凭据。开发机可以在启动命令前导出：
+下面的最小示例只演示内部无状态调用。OpenAI Agents SDK 默认从进程环境读取
+凭据，开发机可以在启动命令前导出：
 
 ```bash
 export OPENAI_API_KEY='<your-api-key>'
@@ -65,6 +73,29 @@ async with httpx.AsyncClient(
 
 不要在模块导入时创建全局 Agent。工厂方式便于测试时替换 runner、时钟、DNS
 解析器和 HTTP 客户端，也能明确资源由谁关闭。
+
+## 持久化对话与本地上下文压缩
+
+REST 对话和登录会话是两个不同资源。Bearer 登录会话只负责身份认证；Agent
+对话保存创作上下文。注销或换一个登录令牌，不会删除同一用户拥有的 Agent
+对话。
+
+每轮请求会先尝试压缩超过阈值的旧历史，再保存已脱敏的当前用户消息。模型输入
+由以下内容组成：
+
+1. 当前用户的创作者资料；
+2. 当前用户的活跃长期记忆；
+3. 当前对话的滚动摘要；
+4. 摘要游标之后、符合预算的最近完整轮次。
+
+资料、记忆和摘要作为不可信上下文数据注入，只影响本次模型输入，不会成为新的
+Session 消息。压缩只更新摘要密文和单调递增的游标，不删除原始消息。压缩失败
+时沿用旧摘要和有界最近历史。
+
+同一对话一次只允许一个运行中的 Agent 请求。进程异常留下的锁会在
+`APP_AGENT_RUN_LOCK_TTL_SECONDS` 后被下一次请求回收。HTTP 消息接口当前是
+非流式响应，包含模型与工具调用的完整延迟；客户端遇到网络超时时，应先读取
+消息列表确认用户消息或助手回复是否已经落库，再决定是否重试。
 
 ## 内置工具
 

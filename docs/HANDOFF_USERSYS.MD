@@ -198,6 +198,39 @@ curl --fail-with-body \
 `avatar_url: null` 表示清空头像。资料实际发生变化时，返回值中的
 `updated_at` 会更新。
 
+## 创作者资料
+
+每个用户注册时都会同时创建一条创作者资料。它和昵称、头像分开维护：
+
+```text
+GET   /api/v1/users/me/profile
+PATCH /api/v1/users/me/profile
+```
+
+可以保存简介、IANA 时区、首选语言、创作者身份、内容方向和协作偏好：
+
+```bash
+curl --fail-with-body \
+  --request PATCH "$BASE_URL/users/me/profile" \
+  --header 'Content-Type: application/json' \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --data '{
+    "bio":"记录从灵感到成片的过程",
+    "timezone":"Asia/Shanghai",
+    "preferred_language":"zh-CN",
+    "creator_identity":"科技区 UP 主",
+    "content_focus":["AI","数码"],
+    "collaboration_preferences":"先确认大纲，再进入脚本"
+  }'
+```
+
+PATCH 至少要提供一个字段。可空字段传 `null` 表示清空。内容方向会去除空项和
+重复项；没有实际变化时 `updated_at` 保持不变。
+
+真实姓名、生日、联系方式等一般个人信息不属于固定创作者资料。需要长期保存时，
+应走长期记忆接口，并遵守敏感信息必须由用户明确要求保存的规则。参见
+[Agent 对话与记忆接入说明](HANDOFF_AGENT_MEMORY.md)。
+
 ## 注销当前会话
 
 ```text
@@ -250,6 +283,9 @@ Bearer 令牌代表当前会话权限。不要把真实令牌放进源码、Git 
 
 生产环境必须使用 HTTPS。登录限流应配置在网关或反向代理层，本服务没有内置
 限流，也没有刷新令牌接口。
+
+登录会话和 Agent 对话互相独立。注销只撤销当前 Bearer 令牌，不会删除 Agent
+对话、消息、长期记忆或创作者资料。重新登录后仍可以凭同一用户身份继续原对话。
 
 ## 接入检查
 
