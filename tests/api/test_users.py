@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from inspire_flow_backend.data.models.user import User
+from inspire_flow_backend.data.models.user_profile import UserProfile
 
 PASSWORD = "correct horse battery staple"
 
@@ -287,3 +288,21 @@ def test_persists_only_argon2_password_hash(
     assert user.password_hash != PASSWORD
     assert PASSWORD not in user.password_hash
     assert user.password_hash.startswith("$argon2")
+
+
+def test_registration_persists_profile_in_same_transaction(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    response = client.post(
+        "/api/v1/users",
+        json={"nickname": "aria", "password": PASSWORD},
+    )
+    assert response.status_code == 201
+    user_id = UUID(response.json()["id"])
+
+    with db_session_factory() as db:
+        profile = db.get(UserProfile, user_id)
+
+    assert profile is not None
+    assert profile.created_at == profile.updated_at

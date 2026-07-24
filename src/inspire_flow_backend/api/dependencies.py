@@ -1,17 +1,38 @@
+from collections.abc import AsyncGenerator
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from inspire_flow_backend.core.config import get_settings
+from inspire_flow_backend.core.context_security import ContextCipher
 from inspire_flow_backend.core.errors import InvalidSessionError
 from inspire_flow_backend.data.database import get_db_session
+from inspire_flow_backend.services.agent.runtime import (
+    AgentRuntime,
+    create_agent_runtime,
+)
 from inspire_flow_backend.services.sessions import (
     AuthenticatedSession,
     resolve_session,
 )
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+@lru_cache
+def get_context_cipher() -> ContextCipher:
+    return ContextCipher.from_settings(get_settings())
+
+
+async def get_agent_runtime() -> AsyncGenerator[AgentRuntime]:
+    runtime = create_agent_runtime()
+    try:
+        yield runtime
+    finally:
+        await runtime.aclose()
 
 
 def get_current_session(
