@@ -2,12 +2,16 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
 type Clock = Callable[[], datetime]
 type HostResolver = Callable[[str], Awaitable[set[str]]]
+
+
+class TextGenerator(Protocol):
+    async def generate(self, prompt: str) -> str: ...
 
 
 class AgentToolError(Exception):

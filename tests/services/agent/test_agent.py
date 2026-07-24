@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
-from agents import Agent
+from agents import Agent, RunConfig, Session, TResponseInputItem
 
 from inspire_flow_backend.services.agent import agent as agent_module
 from inspire_flow_backend.services.agent.agent import (
@@ -15,18 +15,37 @@ from inspire_flow_backend.services.agent.agent import (
 
 
 @dataclass
+class RunnerCall:
+    starting_agent: Agent[Any]
+    input: str | list[TResponseInputItem]
+    max_turns: int
+    session: Session | None
+    run_config: RunConfig | None
+
+
+@dataclass
 class FakeRunner:
     result: object
-    calls: list[tuple[Agent[Any], str, int]] = field(default_factory=list)
+    calls: list[RunnerCall] = field(default_factory=list)
 
     async def run(
         self,
         starting_agent: Agent[Any],
-        prompt: str,
+        input: str | list[TResponseInputItem],
         *,
         max_turns: int,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
     ) -> Any:
-        self.calls.append((starting_agent, prompt, max_turns))
+        self.calls.append(
+            RunnerCall(
+                starting_agent=starting_agent,
+                input=input,
+                max_turns=max_turns,
+                session=session,
+                run_config=run_config,
+            )
+        )
         return self.result
 
 
@@ -149,10 +168,11 @@ def test_service_delegates_runs_and_allows_turn_override() -> None:
 
         assert default_result is expected
         assert override_result is expected
-        assert runner.calls == [
-            (service.agent, "first prompt", 7),
-            (service.agent, "second prompt", 2),
+        assert [(call.input, call.max_turns) for call in runner.calls] == [
+            ("first prompt", 7),
+            ("second prompt", 2),
         ]
+        assert all(call.starting_agent is service.agent for call in runner.calls)
     finally:
         asyncio.run(client.aclose())
 
@@ -165,6 +185,41 @@ def test_service_rejects_blank_prompts(prompt: str) -> None:
     try:
         with pytest.raises(ValueError, match="prompt"):
             asyncio.run(service.run(prompt))
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_service_delegates_session_input_and_run_config() -> None:
+    runner = FakeRunner(object())
+    client = build_http_client()
+    service = create_agent_service(http_client=client, runner=runner)
+    expected_session = cast(Session, object())
+    expected_config = RunConfig(trace_include_sensitive_data=False)
+
+    try:
+        asyncio.run(
+            service.run(
+                [],
+                session=expected_session,
+                run_config=expected_config,
+            )
+        )
+
+        call = runner.calls[-1]
+        assert call.input == []
+        assert call.session is expected_session
+        assert call.run_config is expected_config
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_service_rejects_empty_input_without_session() -> None:
+    client = build_http_client()
+    service = create_agent_service(http_client=client, runner=FakeRunner(object()))
+
+    try:
+        with pytest.raises(ValueError, match="session"):
+            asyncio.run(service.run([]))
     finally:
         asyncio.run(client.aclose())
 
@@ -198,11 +253,13 @@ def test_service_does_not_swallow_runner_exceptions() -> None:
         async def run(
             self,
             starting_agent: Agent[Any],
-            prompt: str,
+            input: str | list[TResponseInputItem],
             *,
             max_turns: int,
+            session: Session | None = None,
+            run_config: RunConfig | None = None,
         ) -> Any:
-            del starting_agent, prompt, max_turns
+            del starting_agent, input, max_turns, session, run_config
             raise expected
 
     client = build_http_client()

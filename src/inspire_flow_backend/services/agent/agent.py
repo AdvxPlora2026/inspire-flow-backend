@@ -2,7 +2,15 @@ from types import TracebackType
 from typing import Any, Protocol
 
 import httpx
-from agents import Agent, Model, Runner, RunResult
+from agents import (
+    Agent,
+    Model,
+    RunConfig,
+    Runner,
+    RunResult,
+    Session,
+    TResponseInputItem,
+)
 
 from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.services.agent.contracts import (
@@ -79,9 +87,11 @@ class AgentRunner(Protocol):
     async def run(
         self,
         starting_agent: Agent[Any],
-        prompt: str,
+        input: str | list[TResponseInputItem],
         *,
         max_turns: int,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
     ) -> RunResult: ...
 
 
@@ -89,14 +99,18 @@ class OpenAIAgentRunner:
     async def run(
         self,
         starting_agent: Agent[Any],
-        prompt: str,
+        input: str | list[TResponseInputItem],
         *,
         max_turns: int,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
     ) -> RunResult:
         return await Runner.run(
             starting_agent,
-            prompt,
+            input,
             max_turns=max_turns,
+            session=session,
+            run_config=run_config,
         )
 
 
@@ -122,17 +136,24 @@ class AgentService:
 
     async def run(
         self,
-        prompt: str,
+        input: str | list[TResponseInputItem],
         *,
         max_turns: int | None = None,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
     ) -> RunResult:
-        if not prompt.strip():
-            raise ValueError("prompt must not be blank")
+        if isinstance(input, str):
+            if not input.strip():
+                raise ValueError("prompt must not be blank")
+        elif not input and session is None:
+            raise ValueError("empty Agent input requires a session")
         turn_count = self._max_turns if max_turns is None else _positive_turn_count(max_turns)
         return await self._runner.run(
             self._agent,
-            prompt,
+            input,
             max_turns=turn_count,
+            session=session,
+            run_config=run_config,
         )
 
     async def aclose(self) -> None:
