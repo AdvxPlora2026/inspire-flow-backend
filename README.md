@@ -107,9 +107,9 @@ Settings are loaded from environment variables and an optional `.env` file.
 | `APP_AGENT_MEMORY_MAX_ITEMS` | `30` | Maximum active memories injected per turn |
 | `APP_AGENT_MEMORY_MAX_CHARACTERS` | `8000` | Memory-section character budget |
 | `APP_AGENT_RUN_LOCK_TTL_SECONDS` | `600` | Stale conversation-run lock timeout |
-| `DEEPSEEK_API_KEY` | blank | DeepSeek-compatible API credential |
-| `DEEPSEEK_MODEL` | blank | Model name used by the Agent, compactor, and extractor |
-| `DEEPSEEK_BASE_URL` | blank | OpenAI-compatible DeepSeek endpoint |
+| `MODEL_API_KEY` | blank | OpenAI-compatible Chat Completions API credential |
+| `MODEL_NAME` | blank | Model name used by the Agent, compactor, and extractor |
+| `MODEL_BASE_URL` | blank | API root or complete `/chat/completions` endpoint |
 
 Keep secrets in `.env`; it is ignored by Git. `.env.example` contains only
 safe defaults and remains tracked. In local development, the first encrypted

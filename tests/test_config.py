@@ -93,43 +93,65 @@ def test_agent_context_trigger_must_not_exceed_hard_limit(monkeypatch) -> None:
         config.get_settings.cache_clear()
 
 
-def test_deepseek_settings_load_existing_environment_names(monkeypatch) -> None:
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
-    monkeypatch.setenv("DEEPSEEK_MODEL", "test-model")
-    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://model.example/v1")
+def test_model_settings_load_provider_neutral_environment_names(monkeypatch) -> None:
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "test-model")
+    monkeypatch.setenv("MODEL_BASE_URL", "https://model.example/v1")
 
     config = import_module("inspire_flow_backend.core.config")
-    config.get_deepseek_settings.cache_clear()
+    config.get_model_settings.cache_clear()
 
     try:
-        settings = config.get_deepseek_settings()
+        settings = config.get_model_settings()
 
         assert settings.api_key is not None
         assert settings.api_key.get_secret_value() == "test-key"
-        assert settings.model == "test-model"
+        assert settings.name == "test-model"
         assert str(settings.base_url) == "https://model.example/v1"
     finally:
-        config.get_deepseek_settings.cache_clear()
+        config.get_model_settings.cache_clear()
 
 
 def test_blank_optional_secret_settings_are_treated_as_unconfigured(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("APP_CONTEXT_ENCRYPTION_KEY", "")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
-    monkeypatch.setenv("DEEPSEEK_MODEL", "")
-    monkeypatch.setenv("DEEPSEEK_BASE_URL", "")
+    monkeypatch.setenv("MODEL_API_KEY", "")
+    monkeypatch.setenv("MODEL_NAME", "")
+    monkeypatch.setenv("MODEL_BASE_URL", "")
 
     config = import_module("inspire_flow_backend.core.config")
     config.get_settings.cache_clear()
-    config.get_deepseek_settings.cache_clear()
+    config.get_model_settings.cache_clear()
 
     try:
         assert config.get_settings().context_encryption_key is None
-        deepseek = config.get_deepseek_settings()
-        assert deepseek.api_key is None
-        assert deepseek.model is None
-        assert deepseek.base_url is None
+        model = config.get_model_settings()
+        assert model.api_key is None
+        assert model.name is None
+        assert model.base_url is None
     finally:
         config.get_settings.cache_clear()
-        config.get_deepseek_settings.cache_clear()
+        config.get_model_settings.cache_clear()
+
+
+def test_legacy_deepseek_environment_names_do_not_configure_model(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "legacy-key")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "legacy-model")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://legacy.example/v1")
+    monkeypatch.setenv("MODEL_API_KEY", "")
+    monkeypatch.setenv("MODEL_NAME", "")
+    monkeypatch.setenv("MODEL_BASE_URL", "")
+
+    config = import_module("inspire_flow_backend.core.config")
+    config.get_model_settings.cache_clear()
+
+    try:
+        model = config.get_model_settings()
+        assert model.api_key is None
+        assert model.name is None
+        assert model.base_url is None
+    finally:
+        config.get_model_settings.cache_clear()

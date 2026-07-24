@@ -12,8 +12,8 @@ from agents import (
 from openai import AsyncOpenAI
 
 from inspire_flow_backend.core.config import (
-    DeepSeekSettings,
-    get_deepseek_settings,
+    ModelSettings,
+    get_model_settings,
 )
 from inspire_flow_backend.core.errors import AgentUnavailableError
 from inspire_flow_backend.services.agent.agent import (
@@ -103,15 +103,15 @@ class AgentRuntime:
 
 
 def create_agent_runtime(
-    settings: DeepSeekSettings | None = None,
+    settings: ModelSettings | None = None,
 ) -> AgentRuntime:
     from agents import OpenAIChatCompletionsModel
 
-    configured = settings or get_deepseek_settings()
+    configured = settings or get_model_settings()
     if (
         configured.api_key is None
-        or configured.model is None
-        or not configured.model.strip()
+        or configured.name is None
+        or not configured.name.strip()
         or configured.base_url is None
     ):
         raise AgentUnavailableError
@@ -121,7 +121,7 @@ def create_agent_runtime(
         base_url=_normalize_openai_base_url(str(configured.base_url)),
     )
     model = OpenAIChatCompletionsModel(
-        model=configured.model,
+        model=configured.name,
         openai_client=client,
     )
     conversation_agent: AgentService = create_agent_service(model=model)

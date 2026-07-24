@@ -52,19 +52,19 @@ class Settings(BaseSettings):
         return self
 
 
-class DeepSeekSettings(BaseSettings):
+class ModelSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        env_prefix="DEEPSEEK_",
+        env_prefix="MODEL_",
         extra="ignore",
     )
 
     api_key: SecretStr | None = None
-    model: str | None = None
+    name: str | None = None
     base_url: AnyHttpUrl | None = None
 
-    @field_validator("api_key", "model", "base_url", mode="before")
+    @field_validator("api_key", "name", "base_url", mode="before")
     @classmethod
     def normalize_optional_model_settings(cls, value: object) -> object:
         return _none_if_blank(value)
@@ -76,8 +76,8 @@ def get_settings() -> Settings:
 
 
 @lru_cache
-def get_deepseek_settings() -> DeepSeekSettings:
-    return DeepSeekSettings()
+def get_model_settings() -> ModelSettings:
+    return ModelSettings()
 
 
 def _none_if_blank(value: object) -> object:

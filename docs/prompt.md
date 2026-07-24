@@ -5,9 +5,9 @@ InspireFlow Agent 同时提供内部 Python 调用边界和
 加密保存在 SQLite 中，并按登录用户隔离。直接调用 `create_agent_service()` 仍是
 无状态模式，只有显式传入 Agents SDK `Session` 时才会使用会话历史。
 
-REST 运行时从 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 和
-`DEEPSEEK_BASE_URL` 读取 OpenAI 兼容模型配置。不要把真实密钥写进文档、日志或
-Git。完整的 HTTP 接入方式见
+REST 运行时从 `MODEL_API_KEY`、`MODEL_NAME` 和 `MODEL_BASE_URL` 读取 OpenAI
+Chat Completions 兼容模型配置，不限定具体模型厂商。不要把真实密钥写进文档、
+日志或 Git。完整的 HTTP 接入方式见
 [HANDOFF_AGENT_MEMORY.md](HANDOFF_AGENT_MEMORY.md)。
 
 ## 最小调用方式
