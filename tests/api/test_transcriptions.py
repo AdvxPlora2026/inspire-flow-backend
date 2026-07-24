@@ -88,6 +88,8 @@ def test_submits_audio_as_an_authenticated_async_job(
     assert body["language"] == "zh"
     assert body["use_itn"] is True
     assert body["text"] is None
+    assert body["emotions"] is None
+    assert body["audio_events"] is None
     assert response.headers["location"] == f"/api/v1/transcriptions/{job_id}"
     assert publisher.job_ids == [job_id]
     assert (tmp_path / "spool" / f"{job_id}.audio").read_bytes() == b"RIFF-test-audio"
@@ -112,8 +114,16 @@ def test_reads_encrypted_result_and_hides_foreign_job(
         assert job is not None
         job.status = "succeeded"
         job.transcript_ciphertext = context_cipher.encrypt_text("这是转写正文")
+        job.analysis_ciphertext = context_cipher.encrypt_json(
+            {
+                "version": 1,
+                "emotions": ["happy", "neutral"],
+                "audio_events": ["speech", "laughter"],
+            }
+        )
         db.commit()
         raw_ciphertext = job.transcript_ciphertext
+        raw_analysis_ciphertext = job.analysis_ciphertext
 
     owner = client.get(
         f"/api/v1/transcriptions/{job_id}",
@@ -126,10 +136,42 @@ def test_reads_encrypted_result_and_hides_foreign_job(
 
     assert owner.status_code == 200
     assert owner.json()["text"] == "这是转写正文"
+    assert owner.json()["emotions"] == ["happy", "neutral"]
+    assert owner.json()["audio_events"] == ["speech", "laughter"]
     assert raw_ciphertext is not None
     assert "这是转写正文" not in raw_ciphertext
+    assert raw_analysis_ciphertext is not None
+    assert "happy" not in raw_analysis_ciphertext
     assert foreign.status_code == 404
     assert foreign.json()["error"]["code"] == "transcription_not_found"
+
+
+def test_existing_success_without_analysis_returns_null_metadata(
+    client: TestClient,
+    tmp_path: Path,
+    db_session_factory: sessionmaker[Session],
+    context_cipher: ContextCipher,
+) -> None:
+    enable_stt(client, tmp_path / "spool", FakeTranscriptionPublisher())
+    token = register_and_login(client, "aria")
+    created = submit_audio(client, token)
+    job_id = UUID(created.json()["id"])
+    with db_session_factory() as db:
+        job = db.get(TranscriptionJob, job_id)
+        assert job is not None
+        job.status = "succeeded"
+        job.transcript_ciphertext = context_cipher.encrypt_text("旧结果")
+        db.commit()
+
+    response = client.get(
+        f"/api/v1/transcriptions/{job_id}",
+        headers=bearer(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "旧结果"
+    assert response.json()["emotions"] is None
+    assert response.json()["audio_events"] is None
 
 
 def test_rejects_unauthenticated_and_unsupported_audio(

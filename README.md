@@ -79,7 +79,9 @@ configuration, limits, and security boundaries.
 Authenticated asynchronous speech transcription is available through an
 isolated Celery worker and SenseVoice-Small. The API and model worker use
 separate processes and may use separate uv environments, so a native inference
-failure does not terminate the API. See
+failure does not terminate the API. Successful results include clean text,
+detected language, aggregate emotion labels, and audio events as structured
+JSON. See
 [SenseVoice STT handoff](docs/HANDOFF_STT.md) for Redis, worker, device, and
 REST usage.
 

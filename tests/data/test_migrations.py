@@ -138,6 +138,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "language",
         "use_itn",
         "transcript_ciphertext",
+        "analysis_ciphertext",
         "detected_language",
         "duration_seconds",
         "error_code",
@@ -217,4 +218,66 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
 
     command.downgrade(config, "base")
     assert set(sa.inspect(engine).get_table_names()) == {"alembic_version"}
+    engine.dispose()
+
+
+def test_metadata_migration_preserves_existing_transcription_rows(tmp_path: Path) -> None:
+    database_path = tmp_path / "existing-stt.db"
+    config = make_config(database_path)
+    command.upgrade(config, "20260724_0003")
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
+    user_id = uuid4()
+    job_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO users (
+                    id, nickname, nickname_key, avatar_url, password_hash, created_at, updated_at
+                ) VALUES (
+                    :id, 'Creator', 'creator', NULL, 'test-only-hash', :now, :now
+                )
+                """
+            ),
+            {"id": user_id.hex, "now": now},
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO transcription_jobs (
+                    id, user_id, status, language, use_itn, transcript_ciphertext,
+                    detected_language, duration_seconds, error_code, attempt_count,
+                    started_at, completed_at, created_at, updated_at
+                ) VALUES (
+                    :id, :user_id, 'succeeded', 'zh', 1, 'encrypted-transcript',
+                    'zh', 2.5, NULL, 1, :now, :now, :now, :now
+                )
+                """
+            ),
+            {"id": job_id.hex, "user_id": user_id.hex, "now": now},
+        )
+
+    command.upgrade(config, "head")
+
+    columns = {column["name"] for column in sa.inspect(engine).get_columns("transcription_jobs")}
+    assert "analysis_ciphertext" in columns
+    with engine.connect() as connection:
+        row = connection.execute(
+            sa.text(
+                """
+                SELECT transcript_ciphertext, analysis_ciphertext
+                FROM transcription_jobs
+                WHERE id = :id
+                """
+            ),
+            {"id": job_id.hex},
+        ).one()
+    assert row.transcript_ciphertext == "encrypted-transcript"
+    assert row.analysis_ciphertext is None
+
+    command.downgrade(config, "20260724_0003")
+    assert "analysis_ciphertext" not in {
+        column["name"] for column in sa.inspect(engine).get_columns("transcription_jobs")
+    }
     engine.dispose()

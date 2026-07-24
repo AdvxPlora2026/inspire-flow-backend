@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,6 +25,25 @@ from inspire_flow_backend.workers.stt_engine import (
     TranscriptionResult,
 )
 from inspire_flow_backend.workers.stt_tasks import run_transcription_job
+
+
+def test_isolated_worker_import_registers_orm_models() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from sqlalchemy.orm import configure_mappers;"
+                "import inspire_flow_backend.workers.stt_tasks;"
+                "configure_mappers()"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.fixture
@@ -89,6 +110,8 @@ class SuccessfulEngine:
             text="转写后的正文",
             detected_language="zh",
             duration_seconds=2.5,
+            emotions=("happy", "neutral"),
+            audio_events=("speech", "laughter"),
         )
 
 
@@ -173,6 +196,13 @@ def test_task_encrypts_success_and_is_idempotent(
         assert persisted.transcript_ciphertext is not None
         assert "转写后的正文" not in persisted.transcript_ciphertext
         assert cipher.decrypt_text(persisted.transcript_ciphertext) == "转写后的正文"
+        assert persisted.analysis_ciphertext is not None
+        assert "happy" not in persisted.analysis_ciphertext
+        assert cipher.decrypt_json(persisted.analysis_ciphertext) == {
+            "audio_events": ["speech", "laughter"],
+            "emotions": ["happy", "neutral"],
+            "version": 1,
+        }
         assert persisted.detected_language == "zh"
         assert persisted.duration_seconds == 2.5
     assert engine.calls == 1

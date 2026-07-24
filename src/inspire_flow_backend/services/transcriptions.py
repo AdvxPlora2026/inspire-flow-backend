@@ -3,12 +3,14 @@ from pathlib import Path
 from typing import BinaryIO, Protocol
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from inspire_flow_backend.core.config import Settings
 from inspire_flow_backend.core.context_security import ContextCipher
 from inspire_flow_backend.core.errors import (
     AudioTooLargeError,
+    ContextStorageUnavailableError,
     SttUnavailableError,
     TranscriptionNotFoundError,
     UnsupportedAudioTypeError,
@@ -17,6 +19,9 @@ from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.models.transcription_job import TranscriptionJob
 from inspire_flow_backend.data.repositories import transcriptions as transcription_repository
 from inspire_flow_backend.schemas.transcriptions import (
+    TranscriptionAnalysisStored,
+    TranscriptionAudioEvent,
+    TranscriptionEmotion,
     TranscriptionFailurePublic,
     TranscriptionJobPublic,
     TranscriptionLanguage,
@@ -140,6 +145,8 @@ def complete_transcription_job(
     text: str,
     detected_language: str | None,
     duration_seconds: float,
+    emotions: tuple[TranscriptionEmotion, ...],
+    audio_events: tuple[TranscriptionAudioEvent, ...],
     cipher: ContextCipher,
 ) -> None:
     job = transcription_repository.get_transcription_job_by_id(db, job_id)
@@ -148,6 +155,12 @@ def complete_transcription_job(
     now = utc_now()
     job.status = "succeeded"
     job.transcript_ciphertext = cipher.encrypt_text(text)
+    job.analysis_ciphertext = cipher.encrypt_json(
+        TranscriptionAnalysisStored(
+            emotions=list(emotions),
+            audio_events=list(audio_events),
+        ).model_dump()
+    )
     job.detected_language = detected_language
     job.duration_seconds = duration_seconds
     job.error_code = None
@@ -182,6 +195,17 @@ def build_transcription_public(
         if job.transcript_ciphertext is not None
         else None
     )
+    emotions = None
+    audio_events = None
+    if job.analysis_ciphertext is not None:
+        try:
+            analysis = TranscriptionAnalysisStored.model_validate(
+                cipher.decrypt_json(job.analysis_ciphertext)
+            )
+        except ValidationError as exc:
+            raise ContextStorageUnavailableError from exc
+        emotions = analysis.emotions
+        audio_events = analysis.audio_events
     error = None
     if job.error_code is not None:
         error = TranscriptionFailurePublic(
@@ -198,6 +222,8 @@ def build_transcription_public(
         use_itn=job.use_itn,
         text=text,
         detected_language=job.detected_language,
+        emotions=emotions,
+        audio_events=audio_events,
         duration_seconds=job.duration_seconds,
         error=error,
         attempt_count=job.attempt_count,

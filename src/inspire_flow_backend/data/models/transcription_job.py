@@ -67,6 +67,7 @@ class TranscriptionJob(Base):
         server_default=true(),
     )
     transcript_ciphertext: Mapped[str | None] = mapped_column(Text())
+    analysis_ciphertext: Mapped[str | None] = mapped_column(Text())
     detected_language: Mapped[str | None] = mapped_column(String(16))
     duration_seconds: Mapped[float | None] = mapped_column(Float())
     error_code: Mapped[str | None] = mapped_column(String(64))

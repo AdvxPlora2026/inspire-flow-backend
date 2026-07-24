@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from inspire_flow_backend.core.config import Settings, get_settings
 from inspire_flow_backend.core.context_security import ContextCipher
 from inspire_flow_backend.data.database import SessionLocal
+from inspire_flow_backend.data.model_registry import register_models
 from inspire_flow_backend.services.transcriptions import (
     claim_transcription_attempt,
     complete_transcription_job,
@@ -29,6 +30,8 @@ from inspire_flow_backend.workers.stt_engine import (
 
 _engine: SttEngine | None = None
 _readiness_heartbeat: ReadinessHeartbeat | None = None
+
+register_models()
 
 
 def get_engine() -> SttEngine:
@@ -97,6 +100,8 @@ def run_transcription_job(
                 text=result.text,
                 detected_language=result.detected_language,
                 duration_seconds=result.duration_seconds,
+                emotions=result.emotions,
+                audio_events=result.audio_events,
                 cipher=cipher,
             )
         spool_path.unlink(missing_ok=True)

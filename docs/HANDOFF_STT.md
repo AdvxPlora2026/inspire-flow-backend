@@ -177,6 +177,26 @@ curl \
   http://127.0.0.1:8000/api/v1/transcriptions/<job-id>
 ```
 
+Successful jobs return structured SenseVoice metadata:
+
+```json
+{
+  "status": "succeeded",
+  "text": "今天真是太开心了，我们终于完成了这个作品。",
+  "detected_language": "zh",
+  "emotions": ["happy"],
+  "audio_events": ["speech"],
+  "duration_seconds": 4.3
+}
+```
+
+`emotions` and `audio_events` are aggregate labels in first-seen order. They
+are `null` until a job succeeds and may be empty arrays when no known tag is
+detected. SenseVoice does not provide reliable confidence scores or segment
+timestamps through this integration, so the API does not invent them. Raw
+model tags and display emoji are removed from `text`; the analysis JSON is
+encrypted at rest alongside the transcript.
+
 Statuses are `queued`, `running`, `succeeded`, and `failed`. Failed jobs expose
 only a stable error code and safe message. They never return native model
 exceptions, local paths, broker credentials, or another user's resource.

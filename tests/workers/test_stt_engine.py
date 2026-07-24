@@ -87,7 +87,15 @@ def test_concrete_engine_loads_and_transcribes_only_through_lazy_modules(
     class FakeModel:
         def generate(self, **kwargs: object):
             model_calls.append(kwargs)
-            return [{"text": "<|zh|>测试正文", "language": "zh"}]
+            return [
+                {
+                    "text": (
+                        "<|zh|><|HAPPY|><|Speech|><|withitn|>测试正文 "
+                        "<|zh|><|SAD|><|Laughter|><|withitn|>第二段 "
+                        "<|zh|><|HAPPY|><|Speech|><|withitn|>第三段"
+                    )
+                }
+            ]
 
     class FakeAutoModel:
         def __new__(cls, **kwargs: object):
@@ -98,7 +106,7 @@ def test_concrete_engine_loads_and_transcribes_only_through_lazy_modules(
         "torch": fake_torch(cuda=False, mps=True),
         "funasr": SimpleNamespace(AutoModel=FakeAutoModel),
         "funasr.utils.postprocess_utils": SimpleNamespace(
-            rich_transcription_postprocess=lambda value: str(value).replace("<|zh|>", "")
+            rich_transcription_postprocess=lambda value: f"should-not-run:{value}"
         ),
         "soundfile": SimpleNamespace(
             info=lambda path: SimpleNamespace(frames=16_000, samplerate=16_000)
@@ -115,9 +123,70 @@ def test_concrete_engine_loads_and_transcribes_only_through_lazy_modules(
     assert model_calls[0]["device"] == "mps"
     assert model_calls[0]["hub"] == "hf"
     assert model_calls[1]["input"] == str(tmp_path / "voice.wav")
-    assert result.text == "测试正文"
+    assert result.text == "测试正文 第二段 第三段"
     assert result.detected_language == "zh"
+    assert result.emotions == ("happy", "sad")
+    assert result.audio_events == ("speech", "laughter")
     assert result.duration_seconds == 1.0
+
+
+def test_parser_normalizes_all_known_emotions_and_events() -> None:
+    raw_text = (
+        "<|en|><|NEUTRAL|><|Speech|><|withitn|>one "
+        "<|HAPPY|><|BGM|>two "
+        "<|SAD|><|Applause|>three "
+        "<|ANGRY|><|Laughter|>four "
+        "<|FEARFUL|><|Cry|>five "
+        "<|DISGUSTED|><|Sneeze|>six "
+        "<|SURPRISED|><|Breath|>seven "
+        "<|Cough|><|Sing|><|Speech_Noise|>eight"
+    )
+
+    result = stt_engine.parse_sensevoice_output(raw_text)
+
+    assert result.text == "one two three four five six seven eight"
+    assert result.detected_language == "en"
+    assert result.emotions == (
+        "neutral",
+        "happy",
+        "sad",
+        "angry",
+        "fearful",
+        "disgusted",
+        "surprised",
+    )
+    assert result.audio_events == (
+        "speech",
+        "bgm",
+        "applause",
+        "laughter",
+        "cry",
+        "sneeze",
+        "breath",
+        "cough",
+        "sing",
+        "speech_noise",
+    )
+
+
+def test_parser_strips_unknown_tokens_but_preserves_malformed_text() -> None:
+    result = stt_engine.parse_sensevoice_output(
+        "<|ko|><|EMO_UNKNOWN|><|Event_UNK|><|future_tag|>본문 <broken>"
+    )
+
+    assert result.text == "본문 <broken>"
+    assert result.detected_language == "ko"
+    assert result.emotions == ()
+    assert result.audio_events == ()
+
+
+def test_parser_returns_empty_metadata_for_plain_text() -> None:
+    result = stt_engine.parse_sensevoice_output("plain transcript")
+
+    assert result.text == "plain transcript"
+    assert result.detected_language is None
+    assert result.emotions == ()
+    assert result.audio_events == ()
 
 
 def test_auto_device_retries_model_initialization_once_on_cpu(monkeypatch) -> None:

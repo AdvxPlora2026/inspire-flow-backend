@@ -1,11 +1,40 @@
 import os
+import re
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Protocol
 
 from inspire_flow_backend.core.config import Settings
-from inspire_flow_backend.schemas.transcriptions import TranscriptionLanguage
+from inspire_flow_backend.schemas.transcriptions import (
+    TranscriptionAudioEvent,
+    TranscriptionEmotion,
+    TranscriptionLanguage,
+)
+
+_SENSEVOICE_TOKEN = re.compile(r"<\|([^<>]*?)\|>")
+_LANGUAGES = {"en", "ja", "ko", "nospeech", "yue", "zh"}
+_EMOTIONS: dict[str, TranscriptionEmotion] = {
+    "ANGRY": "angry",
+    "DISGUSTED": "disgusted",
+    "FEARFUL": "fearful",
+    "HAPPY": "happy",
+    "NEUTRAL": "neutral",
+    "SAD": "sad",
+    "SURPRISED": "surprised",
+}
+_AUDIO_EVENTS: dict[str, TranscriptionAudioEvent] = {
+    "Applause": "applause",
+    "BGM": "bgm",
+    "Breath": "breath",
+    "Cough": "cough",
+    "Cry": "cry",
+    "Laughter": "laughter",
+    "Sing": "sing",
+    "Sneeze": "sneeze",
+    "Speech": "speech",
+    "Speech_Noise": "speech_noise",
+}
 
 
 class DeviceUnavailableError(RuntimeError):
@@ -29,6 +58,42 @@ class TranscriptionResult:
     text: str
     detected_language: str | None
     duration_seconds: float
+    emotions: tuple[TranscriptionEmotion, ...] = ()
+    audio_events: tuple[TranscriptionAudioEvent, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedSenseVoiceOutput:
+    text: str
+    detected_language: str | None
+    emotions: tuple[TranscriptionEmotion, ...]
+    audio_events: tuple[TranscriptionAudioEvent, ...]
+
+
+def parse_sensevoice_output(raw_text: str) -> ParsedSenseVoiceOutput:
+    detected_language = None
+    emotions: list[TranscriptionEmotion] = []
+    audio_events: list[TranscriptionAudioEvent] = []
+
+    for match in _SENSEVOICE_TOKEN.finditer(raw_text):
+        token = match.group(1)
+        if detected_language is None and token in _LANGUAGES:
+            detected_language = token
+        emotion = _EMOTIONS.get(token)
+        if emotion is not None and emotion not in emotions:
+            emotions.append(emotion)
+        audio_event = _AUDIO_EVENTS.get(token)
+        if audio_event is not None and audio_event not in audio_events:
+            audio_events.append(audio_event)
+
+    text = _SENSEVOICE_TOKEN.sub("", raw_text).strip()
+    text = re.sub(r"[ \t]+", " ", text)
+    return ParsedSenseVoiceOutput(
+        text=text,
+        detected_language=detected_language,
+        emotions=tuple(emotions),
+        audio_events=tuple(audio_events),
+    )
 
 
 class SttEngine(Protocol):
@@ -71,13 +136,11 @@ class SenseVoiceEngine:
         model: object,
         device: str,
         max_duration_seconds: int,
-        postprocess,
         cpu_model_factory=None,
     ) -> None:
         self._model = model
         self.device = device
         self._max_duration_seconds = max_duration_seconds
-        self._postprocess = postprocess
         self._cpu_model_factory = cpu_model_factory
 
     def transcribe(
@@ -108,11 +171,14 @@ class SenseVoiceEngine:
         raw_text = result[0].get("text")
         if not isinstance(raw_text, str):
             raise ModelUnavailableError
-        detected_language = result[0].get("language")
+        parsed = parse_sensevoice_output(raw_text)
+        detected_language = result[0].get("language") or parsed.detected_language
         return TranscriptionResult(
-            text=str(self._postprocess(raw_text)).strip(),
+            text=parsed.text,
             detected_language=(str(detected_language) if detected_language is not None else None),
             duration_seconds=duration,
+            emotions=parsed.emotions,
+            audio_events=parsed.audio_events,
         )
 
     def _generate(
@@ -147,9 +213,7 @@ def create_sensevoice_engine(settings: Settings) -> SenseVoiceEngine:
     os.environ.setdefault("MODELSCOPE_CACHE", str(settings.stt_model_cache_dir))
     os.environ["HF_HUB_DISABLE_XET"] = "1" if settings.stt_hf_disable_xet else "0"
     funasr = import_module("funasr")
-    postprocess_module = import_module("funasr.utils.postprocess_utils")
     auto_model = funasr.AutoModel
-    postprocess = postprocess_module.rich_transcription_postprocess
 
     def build_model(target_device: str):
         return auto_model(
@@ -184,7 +248,6 @@ def create_sensevoice_engine(settings: Settings) -> SenseVoiceEngine:
         model=model,
         device=device,
         max_duration_seconds=settings.stt_max_duration_seconds,
-        postprocess=postprocess,
         cpu_model_factory=cpu_model_factory,
     )
 
