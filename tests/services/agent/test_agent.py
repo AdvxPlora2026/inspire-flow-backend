@@ -31,6 +31,7 @@ class RunnerCall:
 class FakeRunner:
     result: object
     calls: list[RunnerCall] = field(default_factory=list)
+    stream_calls: list[RunnerCall] = field(default_factory=list)
 
     async def run(
         self,
@@ -43,6 +44,28 @@ class FakeRunner:
         context: AgentRunContext | None = None,
     ) -> Any:
         self.calls.append(
+            RunnerCall(
+                starting_agent=starting_agent,
+                input=input,
+                max_turns=max_turns,
+                session=session,
+                run_config=run_config,
+                context=context,
+            )
+        )
+        return self.result
+
+    def run_streamed(
+        self,
+        starting_agent: Agent[Any],
+        input: str | list[TResponseInputItem],
+        *,
+        max_turns: int,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
+    ) -> Any:
+        self.stream_calls.append(
             RunnerCall(
                 starting_agent=starting_agent,
                 input=input,
@@ -270,6 +293,30 @@ def test_service_delegates_session_input_and_run_config() -> None:
         )
 
         call = runner.calls[-1]
+        assert call.input == []
+        assert call.session is expected_session
+        assert call.run_config is expected_config
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_service_delegates_streamed_session_input_and_run_config() -> None:
+    expected_result = object()
+    runner = FakeRunner(expected_result)
+    client = build_http_client()
+    service = create_agent_service(http_client=client, runner=runner)
+    expected_session = cast(Session, object())
+    expected_config = RunConfig(trace_include_sensitive_data=False)
+
+    try:
+        result = service.run_streamed(
+            [],
+            session=expected_session,
+            run_config=expected_config,
+        )
+
+        assert result is expected_result
+        call = runner.stream_calls[-1]
         assert call.input == []
         assert call.session is expected_session
         assert call.run_config is expected_config

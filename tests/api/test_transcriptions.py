@@ -1,5 +1,5 @@
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -43,7 +43,10 @@ def register_and_login(client: TestClient, nickname: str) -> str:
 
 
 def bearer(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"test-{uuid4()}",
+    }
 
 
 def enable_stt(
@@ -93,6 +96,39 @@ def test_submits_audio_as_an_authenticated_async_job(
     assert response.headers["location"] == f"/api/v1/transcriptions/{job_id}"
     assert publisher.job_ids == [job_id]
     assert (tmp_path / "spool" / f"{job_id}.audio").read_bytes() == b"RIFF-test-audio"
+
+
+def test_multipart_submission_replays_by_file_digest(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    publisher = FakeTranscriptionPublisher()
+    enable_stt(client, tmp_path / "spool", publisher)
+    token = register_and_login(client, "multipart-idempotency")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "transcription-upload-0001",
+    }
+
+    def submit(content: bytes):
+        return client.post(
+            "/api/v1/transcriptions",
+            headers=headers,
+            files={"file": ("voice.wav", content, "audio/wav")},
+            data={"language": "zh", "use_itn": "true"},
+        )
+
+    first = submit(b"RIFF-same-audio")
+    replay = submit(b"RIFF-same-audio")
+    conflict = submit(b"RIFF-changed-audio")
+
+    assert first.status_code == 202
+    assert replay.status_code == 202
+    assert replay.json() == first.json()
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert publisher.job_ids == [UUID(first.json()["id"])]
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
 
 
 def test_reads_encrypted_result_and_hides_foreign_job(

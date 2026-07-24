@@ -68,13 +68,25 @@ export INSPIRATION_ID='<灵感 UUID>'
 export CONVERSATION_ID='<对话 UUID>'
 export MEMORY_ID='<记忆 UUID>'
 export JOB_ID='<转写任务 UUID>'
+export BRAND_ID='<品牌组织 UUID>'
+export CREATOR_ID='<创作者用户 UUID>'
+export INTEREST_ID='<合作意向 UUID>'
+export INBOX_ITEM_ID='<收件箱条目 UUID>'
+```
+
+业务写请求还要提供一个 8～128 字符的幂等键。每次新操作生成新键；网络重试必须
+复用原键和原请求内容：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
 ```
 
 ### 2.2 请求和响应
 
 - JSON 请求使用 `Content-Type: application/json`。
-- 除注册、登录和健康检查外，其余接口都需要
+- 除健康检查和已发布橱窗公开读取外，其余接口都需要
   `Authorization: Bearer <access_token>`。
+- 所有已鉴权业务写请求都必须带 `Idempotency-Key`。注册、登录和注销例外。
 - ID 使用 UUID 字符串。
 - 时间使用 ISO 8601 格式，一般为 UTC，例如
   `2026-07-24T10:00:00Z`。
@@ -217,6 +229,7 @@ curl --fail-with-body "$API_BASE/users/me" \
 curl --fail-with-body \
   --request PATCH "$API_BASE/users/me" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "nickname": "demo_creator_updated",
@@ -333,6 +346,7 @@ curl --fail-with-body "$API_BASE/users/me/profile" \
 curl --fail-with-body \
   --request PATCH "$API_BASE/users/me/profile" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "bio": "记录独立开发和影像制作。",
@@ -394,6 +408,7 @@ curl --fail-with-body \
 curl --fail-with-body \
   --request POST "$API_BASE/users/me/memories" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "category": "creative_preference",
@@ -456,6 +471,7 @@ curl --fail-with-body "$API_BASE/users/me/memories/$MEMORY_ID" \
 curl --fail-with-body \
   --request PATCH "$API_BASE/users/me/memories/$MEMORY_ID" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "content": "视频开场要在 10 秒内进入主题。",
@@ -473,7 +489,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/users/me/memories/$MEMORY_ID" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`。
@@ -514,6 +531,7 @@ curl --fail-with-body \
 curl --fail-with-body \
   --request POST "$API_BASE/projects" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "title": "一周做出个人知识库",
@@ -560,6 +578,7 @@ curl --fail-with-body "$API_BASE/projects?limit=20&offset=0" \
 curl --fail-with-body \
   --request POST "$API_BASE/projects/drafts" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "description": "我想拍一期视频，记录自己一周内做出个人知识库的过程，观众是对 AI 工具感兴趣的普通用户。"
@@ -617,6 +636,7 @@ curl --fail-with-body "$API_BASE/projects/$PROJECT_ID" \
 curl --fail-with-body \
   --request PATCH "$API_BASE/projects/$PROJECT_ID" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "title": "7 天做出个人知识库",
@@ -650,7 +670,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/projects/$PROJECT_ID" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 用户明确同意连同孤立灵感一起删除后，重试：
@@ -658,7 +679,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/projects/$PROJECT_ID?delete_orphan_inspirations=true" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`。不要在界面上默认传 `true`。
@@ -736,6 +758,7 @@ curl --fail-with-body \
 curl --fail-with-body \
   --request POST "$API_BASE/inspirations" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data "{
     \"title\": \"演示自动字幕前后对比\",
@@ -806,6 +829,7 @@ curl --fail-with-body "$API_BASE/inspirations/$INSPIRATION_ID" \
 curl --fail-with-body \
   --request PATCH "$API_BASE/inspirations/$INSPIRATION_ID" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data "{
     \"title\": \"字幕与情绪识别对比\",
@@ -823,7 +847,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/inspirations/$INSPIRATION_ID" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`。
@@ -835,7 +860,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request PUT "$API_BASE/inspirations/$INSPIRATION_ID/projects/$PROJECT_ID" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`。灵感和项目都必须属于当前用户。
@@ -847,7 +873,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/inspirations/$INSPIRATION_ID/projects/$PROJECT_ID" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`。如果这是非 `inbox` 灵感的最后一个有效来源，接口返回
@@ -898,6 +925,7 @@ curl --fail-with-body \
 curl --fail-with-body \
   --request POST "$API_BASE/conversations" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "title": "个人知识库视频策划"
@@ -954,6 +982,7 @@ curl --fail-with-body "$API_BASE/conversations/$CONVERSATION_ID" \
 curl --fail-with-body \
   --request PATCH "$API_BASE/conversations/$CONVERSATION_ID" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "title": "个人知识库视频：大纲与分镜",
@@ -976,7 +1005,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/conversations/$CONVERSATION_ID" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 用户确认同时删除孤立灵感后重试：
@@ -984,7 +1014,8 @@ curl --fail-with-body \
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/conversations/$CONVERSATION_ID?delete_orphan_inspirations=true" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`。和项目删除一样，前端不应默认绕过确认。
@@ -1037,6 +1068,7 @@ curl --fail-with-body \
 curl --fail-with-body \
   --request POST "$API_BASE/conversations/$CONVERSATION_ID/messages" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "content": "我想拍一期一周做出个人知识库的视频，先帮我确定最值得讲的主线。"
@@ -1110,6 +1142,7 @@ Celery worker 中执行。模型崩溃或 worker 被替换不会带崩 API 主�
 curl --fail-with-body \
   --request POST "$API_BASE/transcriptions" \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
   --form 'file=@/absolute/path/to/sample.wav' \
   --form 'language=auto' \
   --form 'use_itn=true'
@@ -1206,7 +1239,600 @@ curl --fail-with-body "$API_BASE/transcriptions/$JOB_ID" \
 `stt_model_unavailable`。任务不存在或属于其他用户时返回
 `404 transcription_not_found`。
 
-## 11. 常见错误码
+## 11. 写接口幂等
+
+除注册、登录和注销外，所有需要 Bearer 鉴权的 `POST`、`PUT`、`PATCH`、
+`DELETE` 都强制要求：
+
+```text
+Idempotency-Key: <8～128 个 ASCII 字符>
+```
+
+客户端的正确做法是：
+
+1. 用户发起一次新操作时生成新键。
+2. 超时、断网或没有收到响应时，用原键、原方法、原 URL、原查询参数和原请求体重试。
+3. 用户修改了内容或重新发起操作时生成新键。
+
+同一用户、品牌作用域、路由和键在 24 小时内会重放第一次完成的状态码与响应，
+并增加 `Idempotency-Replayed: true`。同键改了载荷返回
+`409 idempotency_key_conflict`；第一次请求仍在执行时返回
+`409 idempotency_request_in_progress`；缺少键返回
+`400 idempotency_key_required`。运行记录超过 Agent 锁超时仍没有结果时返回
+`409 idempotency_outcome_unknown`，客户端应保留本地操作记录并改用新键重试。
+服务端只保存键摘要，缓存响应经过加密。
+
+```bash
+curl --fail-with-body \
+  --request PATCH "$API_BASE/users/me" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"avatar_url":null}'
+```
+
+上传音频时，服务端使用普通表单字段和文件字节摘要计算请求指纹，不会把音频副本
+写进幂等表。
+
+## 12. 品牌组织与成员
+
+品牌是独立组织，同一用户可以同时是创作者和多个品牌的成员。品牌接口全部在路径
+中明确携带 `brand_id`。角色只有 `owner` 和 `member`：两者都可以发现、关注
+创作者并发送意向；只有 owner 可以修改品牌资料、邀请或管理成员。最后一名 owner
+不能被降级或移除。
+
+### POST /api/v1/brands
+
+创建品牌，创建者自动成为 owner。
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/brands" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name":"Inspire Studio",
+    "description":"负责科技内容合作",
+    "website_url":"https://brand.example.com",
+    "logo_url":null
+  }'
+```
+
+成功返回 `201`：
+
+```json
+{
+  "id": "c7a39cea-62e5-4873-a551-7df9c3477d85",
+  "name": "Inspire Studio",
+  "description": "负责科技内容合作",
+  "website_url": "https://brand.example.com/",
+  "logo_url": null,
+  "my_role": "owner",
+  "created_at": "2026-07-24T10:00:00Z",
+  "updated_at": "2026-07-24T10:00:00Z"
+}
+```
+
+### GET /api/v1/brands
+
+列出当前用户加入的品牌：
+
+```bash
+curl --fail-with-body "$API_BASE/brands?limit=50&offset=0" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### GET、PATCH /api/v1/brands/{brand_id}
+
+GET 读取品牌；PATCH 只有 owner 可以调用，可修改
+`name`、`description`、`website_url`、`logo_url`。
+
+```bash
+curl --fail-with-body "$API_BASE/brands/$BRAND_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/brands/$BRAND_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"description":"新的品牌简介"}'
+```
+
+### 品牌邀请
+
+owner 按现有用户昵称创建邀请：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/brands/$BRAND_ID/invitations" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"nickname":"brand_member"}'
+```
+
+受邀用户查看、接受或拒绝：
+
+```bash
+curl --fail-with-body "$API_BASE/users/me/brand-invitations" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export INVITATION_ID='<邀请 UUID>'
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/brand-invitations/$INVITATION_ID/accept" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+拒绝邀请：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/brand-invitations/$INVITATION_ID/decline" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+owner 撤回待处理邀请：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/brands/$BRAND_ID/invitations/$INVITATION_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+邀请状态为 `pending`、`accepted`、`declined` 或 `revoked`。
+
+### 品牌成员
+
+```bash
+curl --fail-with-body "$API_BASE/brands/$BRAND_ID/members" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export MEMBER_USER_ID='<成员用户 UUID>'
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/brands/$BRAND_ID/members/$MEMBER_USER_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"role":"owner"}'
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/brands/$BRAND_ID/members/$MEMBER_USER_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+跨品牌或非成员访问统一返回 `404 brand_not_found`，不会泄露品牌是否存在；
+已是成员但缺少 owner 权限返回 `403 brand_owner_required`。
+
+## 13. 创作者公开橱窗
+
+橱窗使用“草稿 + 已发布快照”。编辑草稿不会改变线上版本；调用 publish 后才会
+生成新快照。withdraw 只撤回线上入口，不删除草稿、联系方式、授权或历史互动。
+
+字段可见性：
+
+| 值 | 可读取者 |
+| --- | --- |
+| `private` | 仅创作者本人 |
+| `workshop_public` | 所有人 |
+| `brands_only` | 任意品牌组织成员 |
+| `authorized_brands` | 创作者明确授权的品牌成员 |
+
+联系方式只允许 `private` 或 `authorized_brands`。服务端在每次读取时检查当前品牌
+成员关系和有效授权；未授权响应不会包含联系方式原值或密文。
+
+### GET、PATCH /api/v1/users/me/workshop
+
+GET 返回当前草稿、可见性、社交账号、联系方式和精选项目。首次读取尚未保存的
+橱窗时会返回由昵称和头像组成的默认草稿。
+
+PATCH 使用平铺字段；值字段和对应的 `*_visibility` 可以独立更新：
+
+```bash
+curl --fail-with-body "$API_BASE/users/me/workshop" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/users/me/workshop" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "title":"AI 工具实测工作室",
+    "title_visibility":"workshop_public",
+    "bio":"专注真实工作流",
+    "bio_visibility":"workshop_public",
+    "creator_identity":"科技区 UP 主",
+    "creator_identity_visibility":"brands_only",
+    "content_focus":["AI","效率工具"],
+    "content_focus_visibility":"brands_only",
+    "collaboration_preferences":"接受深度测评",
+    "collaboration_preferences_visibility":"authorized_brands"
+  }'
+```
+
+资料字段包括 `nickname`、`avatar_url`、`title`、`bio`、
+`creator_identity`、`content_focus`、`collaboration_preferences`，每项都有
+独立可见性。
+
+### GET /api/v1/users/me/workshop/preview
+
+只有本人能预览草稿。`audience` 可取 `owner`、`public`、`brand`、
+`authorized_brand`，只模拟投影，不修改真实授权。
+
+```bash
+curl --fail-with-body \
+  "$API_BASE/users/me/workshop/preview?audience=brand" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### 发布与撤回
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/workshop/publish" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/workshop/withdraw" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+### GET /api/v1/workshops/{creator_id}
+
+匿名读取已发布橱窗：
+
+```bash
+curl --fail-with-body "$API_BASE/workshops/$CREATOR_ID"
+```
+
+品牌视角读取时必须同时提供 Bearer 和 `brand_id`：
+
+```bash
+curl --fail-with-body \
+  "$API_BASE/workshops/$CREATOR_ID?brand_id=$BRAND_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+撤回、未发布或不存在统一返回 `404 workshop_not_published`。
+
+## 14. 社交账号、联系方式和精选项目
+
+### 社交账号
+
+平台支持 `bilibili`、`douyin`、`xiaohongshu`、`weibo`、`zhihu`、
+`youtube`、`other`，允许四种可见性。
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/workshop/social-accounts" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "platform":"bilibili",
+    "handle":"InspireFlow",
+    "profile_url":"https://space.bilibili.com/123",
+    "visibility":"workshop_public",
+    "sort_order":0
+  }'
+```
+
+成功返回 `201`。修改和删除：
+
+```bash
+export SOCIAL_ACCOUNT_ID='<社交账号 UUID>'
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/users/me/workshop/social-accounts/$SOCIAL_ACCOUNT_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"sort_order":1}'
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/users/me/workshop/social-accounts/$SOCIAL_ACCOUNT_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+### 联系方式
+
+类型支持 `email`、`phone`、`wechat`、`qq`、`telegram`、`other`。原值加密
+存储；email、phone 和 Telegram 会返回服务端生成的 `action_uri`。
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/workshop/contacts" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "type":"email",
+    "label":"商务邮箱",
+    "value":"business@example.com",
+    "visibility":"authorized_brands",
+    "sort_order":0
+  }'
+```
+
+修改、删除：
+
+```bash
+export CONTACT_ID='<联系方式 UUID>'
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/users/me/workshop/contacts/$CONTACT_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"label":"合作邮箱"}'
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/users/me/workshop/contacts/$CONTACT_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+无权限的公开响应会直接省略该联系方式，而不是返回密文或可推断的掩码。
+
+### 精选项目
+
+只能选择当前用户自己的项目：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PUT "$API_BASE/users/me/workshop/projects/$PROJECT_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"visibility":"workshop_public","sort_order":0}'
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/users/me/workshop/projects/$PROJECT_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+发布时会复制项目标题、类型、受众、简介和图标；内部项目后来发生变化，不会改动
+已发布卡片。
+
+## 15. 品牌授权与发现
+
+授权独立于关注和合作意向。接受意向不会自动开放联系方式。
+
+```bash
+curl --fail-with-body "$API_BASE/users/me/workshop/brand-authorizations" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PUT "$API_BASE/users/me/workshop/brand-authorizations/$BRAND_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/users/me/workshop/brand-authorizations/$BRAND_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+首版授权以“创作者 × 品牌组织”为粒度，对该品牌所有成员生效。
+
+### GET /api/v1/brands/{brand_id}/creator-discovery
+
+```bash
+curl --fail-with-body \
+  "$API_BASE/brands/$BRAND_ID/creator-discovery?query=AI&content_focus=效率工具&sort_by=updated_at&sort_order=desc&limit=20&offset=0" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+查询参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `query` | 对当前品牌可见的已发布文字字段做关键词匹配 |
+| `content_focus` | 内容方向 |
+| `creator_identity` | 创作者身份 |
+| `project_type` | 可见精选项目类型 |
+| `followed` | `true` 只看已关注，`false` 排除已关注 |
+| `sort_by` | `published_at` 或 `updated_at` |
+| `sort_order` | `asc` 或 `desc` |
+| `limit`、`offset` | 稳定分页 |
+
+隐藏字段不会参与搜索、筛选、排序、计数或返回，前端不能依靠“是否命中”推断私有
+内容。
+
+## 16. 品牌关注、合作意向和创作者收件箱
+
+### 关注
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PUT "$API_BASE/brands/$BRAND_ID/follows/$CREATOR_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+
+curl --fail-with-body "$API_BASE/brands/$BRAND_ID/follows?limit=50&offset=0" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request DELETE "$API_BASE/brands/$BRAND_ID/follows/$CREATOR_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+关注关系是 `active/inactive` 软状态。取消后重新关注会复用同一关系，并把创作者
+收件箱里的关注条目重新标为未读。
+
+### 合作意向
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/brands/$BRAND_ID/interests" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data "{
+    \"creator_id\":\"$CREATOR_ID\",
+    \"message\":\"想合作一期 AI 工具视频\"
+  }"
+
+curl --fail-with-body "$API_BASE/brands/$BRAND_ID/interests?limit=50&offset=0" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+同一品牌和创作者同时最多一条 `pending` 意向。重复提交时返回现有待处理记录；
+终态后可以新建。品牌撤回：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/brands/$BRAND_ID/interests/$INTEREST_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"status":"withdrawn"}'
+```
+
+创作者接受或拒绝：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/users/me/brand-interests/$INTEREST_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"status":"accepted"}'
+```
+
+状态为 `pending`、`accepted`、`declined`、`withdrawn`。
+
+### 创作者收件箱
+
+```bash
+curl --fail-with-body "$API_BASE/users/me/brand-inbox?limit=50&offset=0" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request PATCH "$API_BASE/users/me/brand-inbox/$INBOX_ITEM_ID" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"is_read":true}'
+```
+
+批量标记已读。空对象表示全部条目，也可以传 `item_ids`：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --fail-with-body \
+  --request POST "$API_BASE/users/me/brand-inbox/mark-read" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{}'
+```
+
+## 17. Agent SSE 流式对话
+
+原有 `POST /api/v1/conversations/{conversation_id}/messages` JSON 接口继续保留。
+需要逐字展示时使用：
+
+```bash
+export IDEMPOTENCY_KEY="$(uuidgen)"
+curl --no-buffer --fail-with-body \
+  --request POST "$API_BASE/conversations/$CONVERSATION_ID/messages/stream" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Accept: text/event-stream' \
+  --header 'Content-Type: application/json' \
+  --data '{"content":"把这个想法整理成视频开头"}'
+```
+
+事件格式：
+
+```text
+id: 1
+event: turn.started
+data: {"turn_id":"..."}
+
+id: 2
+event: response.delta
+data: {"turn_id":"...","delta":"先从"}
+
+event: tool.started
+data: {"turn_id":"...","tool":"search_website"}
+
+event: tool.completed
+data: {"turn_id":"...","tool":"search_website","status":"completed"}
+
+event: turn.completed
+data: {"turn_id":"...","user_message":{...},"assistant_message":{...}}
+```
+
+可能事件为 `turn.started`、`response.delta`、`tool.started`、
+`tool.completed`、`turn.completed`、`turn.failed`。工具事件只暴露安全工具名和
+状态，不含参数、原始结果或内部异常。连接会定期发送 `: heartbeat` 注释。
+
+客户端断线不会取消已经开始的 Agent 本轮；服务端继续写入完整消息、记忆和工具
+副作用。使用原幂等键重试时，运行中返回
+`409 idempotency_request_in_progress`；完成后只重放 `turn.started` 和
+`turn.completed`，不会重放所有增量。流开始前的鉴权、校验和资源错误仍是普通
+HTTP 错误；响应头发出后的失败以 `turn.failed` 结束。
+
+## 18. 新增错误码
+
+| HTTP | `error.code` | 说明 |
+| --- | --- | --- |
+| 400 | `idempotency_key_required` | 已鉴权业务写请求缺少幂等键 |
+| 403 | `brand_owner_required` | 当前成员不是品牌 owner |
+| 403 | `workshop_visibility_forbidden` | 当前读取者不满足字段可见性条件 |
+| 404 | `brand_not_found` | 品牌不存在或当前用户不是成员 |
+| 404 | `brand_invitation_not_found` | 邀请不存在或不属于当前用户/品牌 |
+| 404 | `workshop_not_published` | 橱窗未发布、已撤回或不存在 |
+| 404 | `workshop_item_not_found` | 社交账号、联系方式或精选项不存在 |
+| 404 | `brand_interest_not_found` | 合作意向不存在或不属于当前主体 |
+| 404 | `creator_inbox_item_not_found` | 收件箱条目不存在或不属于当前创作者 |
+| 409 | `brand_last_owner_required` | 操作会移除最后一名 owner |
+| 409 | `brand_invitation_state_conflict` | 邀请已经离开 pending |
+| 409 | `brand_interest_state_conflict` | 意向已经离开 pending |
+| 409 | `idempotency_key_conflict` | 同一幂等键被用于不同请求 |
+| 409 | `idempotency_request_in_progress` | 同一幂等请求仍在运行 |
+| 409 | `idempotency_outcome_unknown` | 上一次执行异常中断，结果无法安全重放；改用新键重试 |
+| 422 | `invalid_workshop_contact` | 联系方式格式不合法 |
+
+## 19. 常见错误码
 
 | HTTP | `error.code` | 处理建议 |
 | --- | --- | --- |
@@ -1234,7 +1860,7 @@ curl --fail-with-body "$API_BASE/transcriptions/$JOB_ID" \
 `401 invalid_session` 还会返回 `WWW-Authenticate: Bearer`。未知 HTTP 错误使用
 `http_error`，客户端可以按状态码给出通用提示，同时记录完整响应供排查。
 
-## 12. Agent 内部工具
+## 20. Agent 内部工具
 
 下面这些是 Agent 运行时的 function tools，不是公开 HTTP API，因此没有对应的
 `curl` 地址。前端需要项目、灵感或用户资料功能时，应调用前文的 REST 接口；
@@ -1257,7 +1883,7 @@ curl --fail-with-body "$API_BASE/transcriptions/$JOB_ID" \
 先说明影响并取得用户确认。工具不能绕过用户隔离，也不能声称已经保存、发布、
 付款或授权；只有实际工具结果成功后，才能向用户确认操作完成。
 
-## 13. 推荐接入顺序
+## 21. 推荐接入顺序
 
 一个最小可用客户端可以按这个顺序接入：
 

@@ -198,6 +198,25 @@ def claim_conversation_run(
     return conversation
 
 
+def ensure_conversation_turn_available(
+    db: Session,
+    *,
+    user_id: UUID,
+    conversation_id: UUID,
+    stale_before: datetime,
+) -> AgentConversation:
+    conversation = get_conversation(db, user_id, conversation_id)
+    if conversation.archived:
+        raise ConversationArchivedError
+    if (
+        conversation.active_run_id is not None
+        and conversation.active_run_started_at is not None
+        and conversation.active_run_started_at >= stale_before
+    ):
+        raise ConversationBusyError
+    return conversation
+
+
 def release_conversation_run(
     db: Session,
     *,

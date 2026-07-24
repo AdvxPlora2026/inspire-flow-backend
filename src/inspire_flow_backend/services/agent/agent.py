@@ -8,6 +8,7 @@ from agents import (
     RunConfig,
     Runner,
     RunResult,
+    RunResultStreaming,
     Session,
     TResponseInputItem,
 )
@@ -121,6 +122,17 @@ class AgentRunner(Protocol):
         context: AgentRunContext | None = None,
     ) -> RunResult: ...
 
+    def run_streamed(
+        self,
+        starting_agent: Agent[Any],
+        input: str | list[TResponseInputItem],
+        *,
+        max_turns: int,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
+    ) -> RunResultStreaming: ...
+
 
 class OpenAIAgentRunner:
     async def run(
@@ -134,6 +146,25 @@ class OpenAIAgentRunner:
         context: AgentRunContext | None = None,
     ) -> RunResult:
         return await Runner.run(
+            starting_agent,
+            input,
+            max_turns=max_turns,
+            session=session,
+            run_config=run_config,
+            context=context,
+        )
+
+    def run_streamed(
+        self,
+        starting_agent: Agent[Any],
+        input: str | list[TResponseInputItem],
+        *,
+        max_turns: int,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
+    ) -> RunResultStreaming:
+        return Runner.run_streamed(
             starting_agent,
             input,
             max_turns=max_turns,
@@ -179,6 +210,30 @@ class AgentService:
             raise ValueError("empty Agent input requires a session")
         turn_count = self._max_turns if max_turns is None else _positive_turn_count(max_turns)
         return await self._runner.run(
+            self._agent,
+            input,
+            max_turns=turn_count,
+            session=session,
+            run_config=run_config,
+            context=context,
+        )
+
+    def run_streamed(
+        self,
+        input: str | list[TResponseInputItem],
+        *,
+        max_turns: int | None = None,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
+    ) -> RunResultStreaming:
+        if isinstance(input, str):
+            if not input.strip():
+                raise ValueError("prompt must not be blank")
+        elif not input and session is None:
+            raise ValueError("empty Agent input requires a session")
+        turn_count = self._max_turns if max_turns is None else _positive_turn_count(max_turns)
+        return self._runner.run_streamed(
             self._agent,
             input,
             max_turns=turn_count,

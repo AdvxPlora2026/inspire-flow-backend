@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from inspire_flow_backend.api.dependencies import (
     get_agent_runtime,
+    get_agent_stream_runtime_factory,
     get_context_cipher,
 )
 from inspire_flow_backend.core.config import Settings
@@ -19,6 +21,7 @@ from inspire_flow_backend.data.database import (
     create_database_engine,
     get_db_session,
 )
+from inspire_flow_backend.data.model_registry import register_models
 from inspire_flow_backend.data.models.agent_conversation import AgentConversation
 from inspire_flow_backend.data.models.agent_message import AgentMessage
 from inspire_flow_backend.data.models.auth_session import AuthSession
@@ -99,6 +102,72 @@ class FakeApiConversationAgent:
     async def aclose(self) -> None:
         return None
 
+    def run_streamed(
+        self,
+        input,
+        *,
+        session,
+        run_config,
+        max_turns=None,
+        context=None,
+    ):
+        del input, max_turns, context
+        agent = self
+
+        class Result:
+            async def stream_events(self):
+                if agent.fail_next:
+                    agent.fail_next = False
+                    raise ModelBehaviorError("fake API streaming failure")
+                history = await session.get_items()
+                conversation_id = UUID(session.session_id)
+                agent.histories[conversation_id] = history
+                if run_config.call_model_input_filter is not None:
+                    filtered = await run_config.call_model_input_filter(
+                        CallModelData(
+                            model_data=ModelInputData(
+                                input=history,
+                                instructions="test",
+                            ),
+                            agent=Agent(
+                                name="FakeApiAgent",
+                                instructions="test",
+                            ),
+                            context=None,
+                        )
+                    )
+                    agent.model_inputs[conversation_id] = filtered.input
+                yield SimpleNamespace(
+                    type="raw_response_event",
+                    data=SimpleNamespace(
+                        type="response.output_text.delta",
+                        delta="已接续 ",
+                    ),
+                )
+                yield SimpleNamespace(
+                    type="raw_response_event",
+                    data=SimpleNamespace(
+                        type="response.output_text.delta",
+                        delta="流式回复",
+                    ),
+                )
+                await session.add_items(
+                    [
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": "已接续 流式回复",
+                                }
+                            ],
+                        }
+                    ]
+                )
+
+        return Result()
+
 
 class FakeApiCompactor:
     async def compact(self, value) -> str:
@@ -169,6 +238,7 @@ def fake_agent_runtime() -> AgentRuntime:
 def db_session_factory(
     tmp_path: Path,
 ) -> Generator[sessionmaker[Session]]:
+    register_models()
     database_path = tmp_path / "api.db"
     test_engine = create_database_engine(f"sqlite:///{database_path}")
     assert {
@@ -208,6 +278,9 @@ def client(
     application.dependency_overrides[get_db_session] = override_db_session
     application.dependency_overrides[get_context_cipher] = lambda: context_cipher
     application.dependency_overrides[get_agent_runtime] = override_agent_runtime
+    application.dependency_overrides[get_agent_stream_runtime_factory] = lambda: (
+        lambda: fake_agent_runtime
+    )
     with TestClient(application) as test_client:
         yield test_client
     application.dependency_overrides.clear()

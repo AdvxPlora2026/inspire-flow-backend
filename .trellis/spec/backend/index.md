@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | uv, Ruff, pytest, and review requirements | Active |
 | [Agent Tools](./agent-tools.md) | Internal Agent lifecycle, no-key search, and safe outbound webpage fetching | Active |
 | [STT Worker](./stt-worker.md) | SenseVoice API, Celery isolation, encrypted jobs, readiness, and device contracts | Active |
+| [Public Workshop and Brand Engagement](./public-workshop-and-engagement.md) | Publishing snapshots, field visibility, brands, engagement, idempotency, and Agent SSE | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 
 ---

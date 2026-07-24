@@ -67,10 +67,10 @@ response shape and `status: "unavailable"`.
 
 The REST API supports registration, login, creator profiles, encrypted
 long-term memories, durable Agent conversations, user-owned creative projects,
-multi-project inspirations, and logout. See
-[HANDOFF_USERSYS.MD](docs/HANDOFF_USERSYS.MD) for authentication and profile
-examples, then [HANDOFF_AGENT_MEMORY.md](docs/HANDOFF_AGENT_MEMORY.md) for
-conversation and memory integration.
+multi-project inspirations, creator Public Workshops, brand organizations,
+brand discovery and engagement, and logout. Authenticated business writes use
+24-hour idempotency keys. See [HANDOFF.md](docs/HANDOFF.md) for the complete
+API contract and curl examples.
 
 Projects can be entered manually or prepared as an editable, unsaved draft
 from a natural-language description. The Agent can also list, inspect, edit,
@@ -88,9 +88,18 @@ The InspireFlow Agent includes date/time, no-key web search, safe webpage
 fetching, local rolling context compression, user-scoped memory, and internal
 tools for explicitly requested identity changes and durable user-profile
 summaries. The conversation UUID returned by the API is the persistent Agent
-session ID and is always resolved together with the bearer-authenticated user. See
-[Agent service handoff](docs/prompt.md) for its prompt, tools, provider
-configuration, limits, and security boundaries.
+session ID and is always resolved together with the bearer-authenticated user.
+Both request/response JSON and SSE streaming conversation endpoints are
+available; streaming runs continue in the background if the client
+disconnects. See [Agent service handoff](docs/prompt.md) for its prompt, tools,
+provider configuration, limits, and security boundaries.
+
+Public Workshop publishing uses editable drafts and immutable published
+snapshots. Each profile field, social account, contact, and featured project
+has an explicit audience. Contact values are encrypted and only returned after
+server-side brand membership and creator authorization checks. Brand members
+can discover visible creators, follow them, send collaboration interests, and
+surface those events in the creator inbox.
 
 Authenticated asynchronous speech transcription is available through an
 isolated Celery worker and SenseVoice-Small. The API and model worker use
@@ -111,7 +120,7 @@ REST usage.
     │   └── routes/
     ├── core/         # Configuration, identity, security, and shared errors
     ├── data/         # SQLAlchemy persistence boundary
-    │   ├── models/   # Users, projects, conversations, messages, and memories
+    │   ├── models/   # Users, content, workshops, brands, engagement, and idempotency
     │   └── repositories/ # Database access implementations
     ├── schemas/      # Pydantic request and response contracts
     ├── services/     # Application behavior, including users and Agent tools

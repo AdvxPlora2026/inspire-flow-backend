@@ -1,16 +1,22 @@
-from typing import Annotated
+from datetime import timedelta
+from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from inspire_flow_backend.api.dependencies import (
     get_agent_runtime,
+    get_agent_stream_runtime_factory,
     get_context_cipher,
     get_current_session,
 )
 from inspire_flow_backend.core.config import Settings, get_settings
 from inspire_flow_backend.core.context_security import ContextCipher
+from inspire_flow_backend.core.errors import IdempotencyKeyRequiredError
+from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.database import get_db_session
 from inspire_flow_backend.schemas.conversations import (
     AgentTurnPublic,
@@ -27,9 +33,14 @@ from inspire_flow_backend.schemas.errors import (
 )
 from inspire_flow_backend.services.agent.conversation import run_conversation_turn
 from inspire_flow_backend.services.agent.runtime import AgentRuntime
+from inspire_flow_backend.services.agent.streaming import (
+    AgentStreamManager,
+    RuntimeFactory,
+)
 from inspire_flow_backend.services.conversations import (
     create_conversation,
     delete_conversation,
+    ensure_conversation_turn_available,
     get_conversation,
     list_conversation_messages,
     list_conversations,
@@ -208,3 +219,68 @@ async def create_user_conversation_message(
         settings=settings,
     )
     return AgentTurnPublic.model_validate(turn)
+
+
+@router.post(
+    "/{conversation_id}/messages/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"text/event-stream": {}},
+            "description": "Server-sent Agent turn events",
+        },
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+async def stream_user_conversation_message(
+    conversation_id: UUID,
+    payload: ConversationMessageCreate,
+    request: Request,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_current_session)],
+    db: Annotated[Session, Depends(get_db_session)],
+    cipher: Annotated[ContextCipher, Depends(get_context_cipher)],
+    runtime_factory: Annotated[
+        RuntimeFactory,
+        Depends(get_agent_stream_runtime_factory),
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StreamingResponse:
+    ensure_conversation_turn_available(
+        db,
+        user_id=authenticated.user.id,
+        conversation_id=conversation_id,
+        stale_before=utc_now() - timedelta(seconds=settings.agent_run_lock_ttl_seconds),
+    )
+    idempotency_record_id = getattr(
+        request.state,
+        "idempotency_record_id",
+        None,
+    )
+    if not isinstance(idempotency_record_id, UUID):
+        raise IdempotencyKeyRequiredError
+    manager = cast(
+        AgentStreamManager,
+        request.app.state.agent_stream_manager,
+    )
+    handle = manager.start(
+        engine=cast(Engine, db.get_bind()),
+        user_id=authenticated.user.id,
+        conversation_id=conversation_id,
+        content=payload.content,
+        idempotency_record_id=idempotency_record_id,
+        runtime_factory=runtime_factory,
+        cipher=cipher,
+        settings=settings,
+    )
+    return StreamingResponse(
+        handle.events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

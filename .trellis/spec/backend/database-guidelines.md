@@ -76,6 +76,23 @@ projects(id, user_id, title, type, audience, summary, icon_url,
 inspirations(id, user_id, title, content, status, source_type,
              source_conversation_id, source_message_id, created_at, updated_at)
 inspiration_projects(inspiration_id, project_id)
+brand_organizations(...)
+brand_memberships(...)
+brand_invitations(...)
+creator_workshops(...)
+workshop_social_accounts(...)
+workshop_contacts(...)
+workshop_project_selections(...)
+workshop_publications(...)
+workshop_publication_social_accounts(...)
+workshop_publication_contacts(...)
+workshop_publication_project_cards(...)
+workshop_brand_authorizations(...)
+brand_follows(...)
+brand_interests(...)
+creator_inbox_items(...)
+idempotency_records(...)
+agent_turn_runs(...)
 ```
 
 ### 3. Contracts
@@ -131,6 +148,21 @@ inspiration_projects(inspiration_id, project_id)
   inspiration is never silently left without every project and source.
 - An unassociated inspiration is valid only in the `inbox` workflow. Project
   set replacement validates every UUID before mutating and commits once.
+- Workshop publishing appends an immutable parent snapshot and copied child
+  rows. Draft and source-project updates must not cascade into publications.
+- `(workshop_user_id, version)` is unique for publication snapshots.
+  `workshop_publications.updated_at` is copied from the draft at publication
+  time and is the only column used for discovery `sort_by=updated_at`.
+- Contact values are encrypted in both draft and publication tables. The
+  application decrypts only after current brand membership and creator
+  authorization have been established.
+- Partial unique indexes enforce one pending invitation, one pending interest,
+  and user-scoped idempotency when nullable `brand_id` would make a normal
+  SQLite unique constraint insufficient.
+- Idempotency records persist only key digests, request fingerprints, safe
+  response headers, and encrypted response bodies. They expire after 24 hours.
+- Agent SSE work owns a separate SQLAlchemy session and stores one
+  `agent_turn_runs` row tied one-to-one to its idempotency record.
 
 ### 4. Validation & Error Matrix
 
@@ -149,6 +181,10 @@ inspiration_projects(inspiration_id, project_id)
 | Foreign project is linked to an inspiration | Reject before mutation with `project_not_found` |
 | Project or conversation deletion would orphan inspirations | Roll back/no-op and require explicit cascade confirmation |
 | FastAPI and Celery connect concurrently | Both connections use foreign keys, WAL, and the configured busy timeout |
+| Published Workshop source changes | Existing publication snapshot remains unchanged |
+| Unauthorized brand reads a contact | Contact row and value are absent from the projection |
+| Concurrent pending interest inserts | Partial unique index permits only one pending row |
+| Nullable brand id in idempotency scope | Partial unique index enforces the user-only scope |
 
 ### 5. Good / Base / Bad Cases
 
@@ -184,6 +220,10 @@ inspiration_projects(inspiration_id, project_id)
   directions and prove existing user rows survive.
 - Test user-scoped inspiration CRUD, atomic full-set replacement, idempotent
   link mutations, filters/search/sort/page order, and deletion impact.
+- Test Workshop, brand, engagement, idempotency, and Agent-turn tables by
+  upgrading from `20260724_0008` to `20260724_0009` and downgrading again.
+- Read SQLite directly and assert contact values and cached idempotent response
+  bodies are not present in plaintext.
 - Use file-backed temporary SQLite databases for API tests so independent
   connections do not split in-memory state.
 

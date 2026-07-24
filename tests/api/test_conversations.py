@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.models.agent_conversation import AgentConversation
 from inspire_flow_backend.data.models.agent_message import AgentMessage
+from inspire_flow_backend.data.models.idempotency import AgentTurnRun, IdempotencyRecord
 from inspire_flow_backend.services.agent.runtime import AgentRuntime
 
 PASSWORD = "correct horse battery staple"
@@ -36,7 +38,10 @@ def login(client: TestClient, nickname: str = "aria") -> str:
 
 
 def bearer(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"test-{uuid4()}",
+    }
 
 
 def create_conversation(
@@ -299,3 +304,164 @@ def test_conversation_validation_and_authentication_are_strict(
     )
     assert unknown.status_code == 422
     assert "not-reflected" not in unknown.text
+
+
+def test_agent_stream_emits_sse_persists_and_replays_completion(
+    client: TestClient,
+) -> None:
+    token = register_and_login(client, "stream-user")
+    conversation = create_conversation(client, token)
+    path = f"/api/v1/conversations/{conversation['id']}/messages/stream"
+    key = f"stream-{uuid4()}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": key,
+    }
+
+    with client.stream(
+        "POST",
+        path,
+        headers=headers,
+        json={"content": "请流式回复"},
+    ) as response:
+        body = "\n".join(response.iter_lines())
+    assert response.status_code == 200
+    assert "event: turn.started" in body
+    assert "event: response.delta" in body
+    assert "已接续" in body
+    assert "event: turn.completed" in body
+
+    messages = client.get(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        headers=bearer(token),
+    )
+    assert messages.status_code == 200
+    assert [item["role"] for item in messages.json()["items"]] == [
+        "user",
+        "assistant",
+    ]
+
+    with client.stream(
+        "POST",
+        path,
+        headers=headers,
+        json={"content": "请流式回复"},
+    ) as replay:
+        replay_body = "\n".join(replay.iter_lines())
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert "event: turn.started" in replay_body
+    assert "event: turn.completed" in replay_body
+    assert "event: response.delta" not in replay_body
+
+
+def test_agent_stream_failure_is_safe_persisted_and_replayable(
+    client: TestClient,
+    fake_agent_runtime: AgentRuntime,
+) -> None:
+    token = register_and_login(client, "stream-failure-user")
+    conversation = create_conversation(client, token)
+    path = f"/api/v1/conversations/{conversation['id']}/messages/stream"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"stream-failure-{uuid4()}",
+    }
+    fake_agent_runtime.conversation_agent.fail_next = True
+
+    with client.stream(
+        "POST",
+        path,
+        headers=headers,
+        json={"content": "这次模拟上游失败"},
+    ) as response:
+        body = "\n".join(response.iter_lines())
+
+    assert response.status_code == 200
+    assert "event: turn.started" in body
+    assert "event: turn.failed" in body
+    assert "agent_run_failed" in body
+    assert "fake API streaming failure" not in body
+
+    messages = client.get(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        headers=bearer(token),
+    )
+    assert [item["role"] for item in messages.json()["items"]] == ["user"]
+
+    with client.stream(
+        "POST",
+        path,
+        headers=headers,
+        json={"content": "这次模拟上游失败"},
+    ) as replay:
+        replay_body = "\n".join(replay.iter_lines())
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert "event: turn.failed" in replay_body
+    assert "event: response.delta" not in replay_body
+
+
+def test_stale_stream_run_is_failed_and_releases_conversation_lock(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    token = register_and_login(client, "stale-stream-user")
+    conversation = create_conversation(client, token)
+    path = f"/api/v1/conversations/{conversation['id']}/messages/stream"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"stale-stream-{uuid4()}",
+    }
+    with client.stream(
+        "POST",
+        path,
+        headers=headers,
+        json={"content": "先完成一轮"},
+    ) as response:
+        assert response.status_code == 200
+        assert "event: turn.completed" in "\n".join(response.iter_lines())
+
+    stale_at = utc_now() - timedelta(seconds=601)
+    with db_session_factory() as db:
+        record = db.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.route_template.endswith("/messages/stream")
+            )
+        )
+        assert record is not None
+        run = db.scalar(
+            select(AgentTurnRun).where(
+                AgentTurnRun.idempotency_record_id == record.id,
+            )
+        )
+        persisted = db.get(AgentConversation, UUID(str(conversation["id"])))
+        assert run is not None
+        assert persisted is not None
+        record.status = "processing"
+        record.created_at = stale_at
+        run.status = "processing"
+        run.completed_at = None
+        persisted.active_run_id = run.id
+        persisted.active_run_started_at = stale_at
+        db.commit()
+
+    retry = client.post(
+        path,
+        headers=headers,
+        json={"content": "先完成一轮"},
+    )
+
+    assert retry.status_code == 409
+    assert retry.json()["error"]["code"] == "idempotency_outcome_unknown"
+    with db_session_factory() as db:
+        persisted_run = db.scalar(
+            select(AgentTurnRun).where(
+                AgentTurnRun.idempotency_record_id == record.id,
+            )
+        )
+        persisted = db.get(AgentConversation, UUID(str(conversation["id"])))
+    assert persisted_run is not None
+    assert persisted_run.status == "failed"
+    assert persisted_run.error_code == "idempotency_outcome_unknown"
+    assert persisted is not None
+    assert persisted.active_run_id is None

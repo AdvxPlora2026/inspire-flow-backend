@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -24,7 +25,10 @@ def register_and_login(client: TestClient, nickname: str = "aria") -> str:
 
 
 def bearer(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"test-{uuid4()}",
+    }
 
 
 def test_registration_creates_one_empty_creator_profile(

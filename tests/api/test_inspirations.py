@@ -35,7 +35,10 @@ def register_and_login(client: TestClient, nickname: str) -> str:
 
 
 def authorization(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"test-{uuid4()}",
+    }
 
 
 def create_project(client: TestClient, token: str, title: str) -> dict[str, object]:

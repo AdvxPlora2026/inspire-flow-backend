@@ -6,6 +6,7 @@ from agents import (
     Model,
     RunConfig,
     RunResult,
+    RunResultStreaming,
     Session,
     TResponseInputItem,
 )
@@ -46,6 +47,16 @@ class ConversationAgent(Protocol):
         run_config: RunConfig | None = None,
         context: AgentRunContext | None = None,
     ) -> object: ...
+
+    def run_streamed(
+        self,
+        input: str | list[TResponseInputItem],
+        *,
+        max_turns: int | None = None,
+        session: Session | None = None,
+        run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
+    ) -> RunResultStreaming: ...
 
     async def aclose(self) -> None: ...
 

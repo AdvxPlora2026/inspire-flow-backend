@@ -52,10 +52,15 @@ but they must not redefine response contracts or implement storage access.
 | `services/agent/compaction.py` | Rolling summary policy and optimistic cursor update |
 | `services/agent/memory_extraction.py` | Evidence-backed long-term-memory candidates |
 | `services/agent/conversation.py` | Durable Agent turn orchestration |
+| `services/agent/streaming.py` | App-scoped background SSE Agent turns and safe event encoding |
 | `services/agent/project_drafting.py` | Structured, non-persisted project drafts from descriptions |
 | `services/agent/runtime.py` | Per-request model, Agent, compactor, extractor, and project-drafter lifecycle |
 | `services/projects.py` | User-scoped project lifecycle and draft failure mapping |
 | `services/inspirations.py` | User-scoped inspiration lifecycle, project links, search, and deletion impact |
+| `services/brands.py` | Brand organization, membership, owner, and invitation behavior |
+| `services/workshops.py` | Workshop draft, publication snapshot, audience projection, authorization, and discovery |
+| `services/engagement.py` | Brand follow, interest, and creator inbox state transitions |
+| `services/idempotency.py` | Authenticated-write fingerprint, replay, and encrypted response retention |
 | `data/models/` | Internal SQLAlchemy persistence entities |
 | `data/model_registry.py` | Explicitly registers all related ORM models for narrow worker and migration entry points |
 | `data/repositories/` | SQLAlchemy queries and mutations without commits |

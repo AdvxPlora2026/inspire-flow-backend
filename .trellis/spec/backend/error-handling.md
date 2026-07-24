@@ -86,6 +86,18 @@ Validation errors may add `error.details`. Each detail contains only
 | Foreign or unknown inspiration | `404` | `inspiration_not_found` | None |
 | Non-inbox inspiration has no project or source | `409` | `inspiration_association_required` | None |
 | Deletion would orphan inspirations | `409` | `orphaned_inspirations_confirmation_required` | None |
+| Unknown or foreign brand | `404` | `brand_not_found` | None |
+| Brand member lacks owner role | `403` | `brand_owner_required` | None |
+| Mutation would remove last owner | `409` | `brand_last_owner_required` | None |
+| Workshop is not published | `404` | `workshop_not_published` | None |
+| Unknown Workshop child item | `404` | `workshop_item_not_found` | None |
+| Invalid Workshop contact | `422` | `invalid_workshop_contact` | None |
+| Unknown brand interest | `404` | `brand_interest_not_found` | None |
+| Interest state is no longer pending | `409` | `brand_interest_state_conflict` | None |
+| Missing or invalid idempotency key | `400` | `idempotency_key_required` | None |
+| Reused key with different request | `409` | `idempotency_key_conflict` | None |
+| Matching idempotent request is running | `409` | `idempotency_request_in_progress` | None |
+| Stale processing request has no replayable result | `409` | `idempotency_outcome_unknown` | None |
 | Other Starlette `HTTPException` | Exception status | `http_error` | Preserve exception headers |
 
 Unknown-nickname and wrong-password login attempts must return the same body.

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,7 +34,10 @@ def register_and_login(
 
 
 def authorization(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": f"test-{uuid4()}",
+    }
 
 
 def test_registers_user_with_public_fields(client: TestClient) -> None:
