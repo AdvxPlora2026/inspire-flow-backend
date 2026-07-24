@@ -26,6 +26,7 @@ from inspire_flow_backend.services.agent.context import (
     ContextInputFilter,
     build_dynamic_context,
 )
+from inspire_flow_backend.services.agent.contracts import AgentRunContext
 from inspire_flow_backend.services.agent.runtime import AgentRuntime
 from inspire_flow_backend.services.agent.session import DatabaseAgentSession
 from inspire_flow_backend.services.agent.session_items import public_message_text
@@ -120,6 +121,7 @@ async def run_conversation_turn(
         try:
             await runtime.conversation_agent.run(
                 [],
+                context=AgentRunContext(db=db, user_id=user.id),
                 session=session,
                 run_config=run_config,
             )

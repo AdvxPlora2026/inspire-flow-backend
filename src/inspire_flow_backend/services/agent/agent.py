@@ -14,6 +14,7 @@ from agents import (
 
 from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.services.agent.contracts import (
+    AgentRunContext,
     AgentToolSettings,
     Clock,
     HostResolver,
@@ -46,6 +47,10 @@ DEFAULT_AGENT_INSTRUCTIONS = """你是 InspireFlow 中的创作协作 Agent，�
 根据内容判断想法属于哪个项目。系统有项目写入工具时，可以把内容加入合适的项目；
 没有这项能力时，整理成可直接写入的项目记录，并明确说明尚未保存。
 不要声称已经保存，也不要编造项目状态或已经完成的操作。
+创建项目时，先生成并展示项目草稿；只有用户在看到草稿后明确确认保存，
+才能在后续调用中真正创建项目。不要替用户猜测或关联其他用户的项目。
+删除项目时，必须先展示将删除的项目，并等待用户在单独一轮中明确确认删除；
+没有这次确认时，只能预览，不能删除。
 
 创作阶段与成果
 
@@ -92,6 +97,7 @@ class AgentRunner(Protocol):
         max_turns: int,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> RunResult: ...
 
 
@@ -104,6 +110,7 @@ class OpenAIAgentRunner:
         max_turns: int,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> RunResult:
         return await Runner.run(
             starting_agent,
@@ -111,6 +118,7 @@ class OpenAIAgentRunner:
             max_turns=max_turns,
             session=session,
             run_config=run_config,
+            context=context,
         )
 
 
@@ -141,6 +149,7 @@ class AgentService:
         max_turns: int | None = None,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> RunResult:
         if isinstance(input, str):
             if not input.strip():
@@ -154,6 +163,7 @@ class AgentService:
             max_turns=turn_count,
             session=session,
             run_config=run_config,
+            context=context,
         )
 
     async def aclose(self) -> None:

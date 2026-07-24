@@ -3,8 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite
 from typing import Literal, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 type Clock = Callable[[], datetime]
 type HostResolver = Callable[[str], Awaitable[set[str]]]
@@ -12,6 +14,12 @@ type HostResolver = Callable[[str], Awaitable[set[str]]]
 
 class TextGenerator(Protocol):
     async def generate(self, prompt: str) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AgentRunContext:
+    db: Session
+    user_id: UUID
 
 
 class AgentToolError(Exception):

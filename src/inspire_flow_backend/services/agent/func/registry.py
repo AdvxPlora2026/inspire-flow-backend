@@ -6,14 +6,29 @@ from inspire_flow_backend.services.agent.contracts import (
     Clock,
     HostResolver,
 )
+from inspire_flow_backend.services.agent.func.create_project import (
+    build_create_project_tool,
+)
 from inspire_flow_backend.services.agent.func.current_datetime import (
     build_current_datetime_tool,
+)
+from inspire_flow_backend.services.agent.func.delete_project import (
+    build_delete_project_tool,
 )
 from inspire_flow_backend.services.agent.func.fetch_webpage import (
     build_fetch_webpage_tool,
 )
+from inspire_flow_backend.services.agent.func.get_project import (
+    build_get_project_tool,
+)
+from inspire_flow_backend.services.agent.func.list_projects import (
+    build_list_projects_tool,
+)
 from inspire_flow_backend.services.agent.func.search_website import (
     build_search_website_tool,
+)
+from inspire_flow_backend.services.agent.func.update_project import (
+    build_update_project_tool,
 )
 from inspire_flow_backend.services.agent.web_fetch import (
     WebPageFetcher,
@@ -53,4 +68,9 @@ def build_agent_tools(
             fetcher=fetcher,
             settings=settings,
         ),
+        build_create_project_tool(),
+        build_list_projects_tool(),
+        build_get_project_tool(),
+        build_update_project_tool(),
+        build_delete_project_tool(),
     ]

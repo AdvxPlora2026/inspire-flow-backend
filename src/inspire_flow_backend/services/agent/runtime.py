@@ -25,10 +25,14 @@ from inspire_flow_backend.services.agent.compaction import (
     ContextCompactor,
     ModelContextCompactor,
 )
-from inspire_flow_backend.services.agent.contracts import TextGenerator
+from inspire_flow_backend.services.agent.contracts import AgentRunContext, TextGenerator
 from inspire_flow_backend.services.agent.memory_extraction import (
     MemoryExtractor,
     ModelMemoryExtractor,
+)
+from inspire_flow_backend.services.agent.project_drafting import (
+    ModelProjectDraftGenerator,
+    ProjectDraftGenerator,
 )
 
 
@@ -40,6 +44,7 @@ class ConversationAgent(Protocol):
         max_turns: int | None = None,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> object: ...
 
     async def aclose(self) -> None: ...
@@ -88,6 +93,7 @@ class AgentRuntime:
     conversation_agent: ConversationAgent
     compactor: ContextCompactor
     memory_extractor: MemoryExtractor
+    project_draft_generator: ProjectDraftGenerator
     _model_client: AsyncOpenAI | None = field(default=None, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
 
@@ -139,5 +145,6 @@ def create_agent_runtime(
         conversation_agent=conversation_agent,
         compactor=ModelContextCompactor(compaction_generator),
         memory_extractor=ModelMemoryExtractor(extraction_generator),
+        project_draft_generator=ModelProjectDraftGenerator(model=model),
         _model_client=client,
     )

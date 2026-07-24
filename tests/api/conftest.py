@@ -22,12 +22,14 @@ from inspire_flow_backend.data.database import (
 from inspire_flow_backend.data.models.agent_conversation import AgentConversation
 from inspire_flow_backend.data.models.agent_message import AgentMessage
 from inspire_flow_backend.data.models.auth_session import AuthSession
+from inspire_flow_backend.data.models.project import Project
 from inspire_flow_backend.data.models.transcription_job import TranscriptionJob
 from inspire_flow_backend.data.models.user import User
 from inspire_flow_backend.data.models.user_memory import UserMemory
 from inspire_flow_backend.data.models.user_profile import UserProfile
 from inspire_flow_backend.main import create_app
 from inspire_flow_backend.schemas.memories import MemoryCategory
+from inspire_flow_backend.schemas.projects import ProjectDraft
 from inspire_flow_backend.services.agent.memory_extraction import (
     AcceptedMemoryCandidate,
     MemoryExtractionResult,
@@ -43,8 +45,16 @@ class FakeApiConversationAgent:
         self.histories: dict[UUID, list[dict[str, object]]] = {}
         self.model_inputs: dict[UUID, list[dict[str, object]]] = {}
 
-    async def run(self, input, *, session, run_config, max_turns=None):
-        del input, max_turns
+    async def run(
+        self,
+        input,
+        *,
+        session,
+        run_config,
+        max_turns=None,
+        context=None,
+    ):
+        del input, max_turns, context
         if self.fail_next:
             self.fail_next = False
             raise ModelBehaviorError("fake API model failure")
@@ -114,6 +124,24 @@ class FakeApiMemoryExtractor:
         )
 
 
+class FakeApiProjectDraftGenerator:
+    def __init__(self) -> None:
+        self.fail_next = False
+        self.descriptions: list[str] = []
+
+    async def generate(self, description: str) -> ProjectDraft:
+        self.descriptions.append(description)
+        if self.fail_next:
+            self.fail_next = False
+            raise ModelBehaviorError("fake project draft failure")
+        return ProjectDraft(
+            title="本地语音识别实测",
+            type="科技数码",
+            audience="希望保护隐私的创作者",
+            summary="对比本地部署的速度和效果",
+        )
+
+
 @pytest.fixture
 def context_cipher(tmp_path: Path) -> ContextCipher:
     return ContextCipher.from_settings(
@@ -131,6 +159,7 @@ def fake_agent_runtime() -> AgentRuntime:
         conversation_agent=FakeApiConversationAgent(),
         compactor=FakeApiCompactor(),
         memory_extractor=FakeApiMemoryExtractor(),
+        project_draft_generator=FakeApiProjectDraftGenerator(),
     )
 
 
@@ -144,6 +173,7 @@ def db_session_factory(
         AgentConversation.__tablename__,
         AgentMessage.__tablename__,
         AuthSession.__tablename__,
+        Project.__tablename__,
         TranscriptionJob.__tablename__,
         User.__tablename__,
         UserMemory.__tablename__,

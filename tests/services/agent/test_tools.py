@@ -3,12 +3,22 @@ import importlib
 import json
 from datetime import UTC, datetime
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 import pytest
 from agents.tool_context import ToolContext
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
 
+from inspire_flow_backend.core.time import utc_now
+from inspire_flow_backend.data.base import Base
+from inspire_flow_backend.data.database import create_database_engine
+from inspire_flow_backend.data.model_registry import register_models
+from inspire_flow_backend.data.models.project import Project
+from inspire_flow_backend.data.models.user import User
 from inspire_flow_backend.services.agent.contracts import (
+    AgentRunContext,
     AgentToolError,
     AgentToolSettings,
 )
@@ -55,6 +65,21 @@ def test_agent_functions_are_defined_under_func_package() -> None:
         "inspire_flow_backend.services.agent.func.fetch_webpage": [
             "build_fetch_webpage_tool",
         ],
+        "inspire_flow_backend.services.agent.func.create_project": [
+            "build_create_project_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.list_projects": [
+            "build_list_projects_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.get_project": [
+            "build_get_project_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.update_project": [
+            "build_update_project_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.delete_project": [
+            "build_delete_project_tool",
+        ],
         "inspire_flow_backend.services.agent.func.registry": [
             "build_agent_tools",
         ],
@@ -71,15 +96,42 @@ def test_agent_functions_are_defined_under_func_package() -> None:
             assert value.__module__ == module_name
 
 
-async def invoke_tool_async(tool, arguments: dict[str, object]) -> str:
+async def invoke_tool_async(
+    tool,
+    arguments: dict[str, object],
+    context: AgentRunContext | None = None,
+) -> str:
     arguments_json = json.dumps(arguments)
     context = ToolContext(
-        context=None,
+        context=context,
         tool_name=tool.name,
         tool_call_id="test-call",
         tool_arguments=arguments_json,
     )
     return await tool.on_invoke_tool(context, arguments_json)
+
+
+def invoke_project_tool(
+    tool,
+    arguments: dict[str, object],
+    context: AgentRunContext | None,
+) -> dict[str, object]:
+    return json.loads(asyncio.run(invoke_tool_async(tool, arguments, context)))
+
+
+def add_user(db: Session, nickname: str) -> User:
+    now = utc_now()
+    user = User(
+        id=uuid4(),
+        nickname=nickname,
+        nickname_key=nickname.casefold(),
+        password_hash="test-only-hash",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(user)
+    db.commit()
+    return user
 
 
 def test_current_datetime_defaults_to_utc() -> None:
@@ -383,6 +435,164 @@ def test_network_tool_timeout_is_configured_as_safe_json_result() -> None:
         assert fetch_output["error"] == {
             "code": "fetch_unavailable",
             "message": "Webpage fetch tool timed out",
+        }
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_project_tool_schemas_hide_owner_context() -> None:
+    client, tools = build_tools()
+
+    try:
+        project_tools = tools[3:]
+        assert [tool.name for tool in project_tools] == [
+            "create_project",
+            "list_projects",
+            "get_project",
+            "update_project",
+            "delete_project",
+        ]
+        for tool in project_tools:
+            properties = tool.params_json_schema.get("properties", {})
+            assert "user_id" not in properties
+            assert "ctx" not in properties
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_project_tools_enforce_confirmation_and_user_isolation() -> None:
+    register_models()
+    engine = create_database_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    client, tools = build_tools()
+    try:
+        with factory() as db:
+            owner = add_user(db, "tool-owner")
+            other = add_user(db, "tool-other")
+            owner_context = AgentRunContext(db=db, user_id=owner.id)
+            other_context = AgentRunContext(db=db, user_id=other.id)
+            draft_arguments = {
+                "title": "MPS 实测",
+                "type": "科技数码",
+                "audience": "Mac 用户",
+                "summary": "本地部署语音识别",
+                "confirmed": False,
+            }
+
+            draft = invoke_project_tool(tools[3], draft_arguments, owner_context)
+            assert draft["ok"] is True
+            assert draft["status"] == "confirmation_required"
+            assert draft["draft"]["title"] == "MPS 实测"
+            assert db.scalar(select(func.count()).select_from(Project)) == 0
+
+            created = invoke_project_tool(
+                tools[3],
+                {**draft_arguments, "confirmed": True},
+                owner_context,
+            )
+            assert created["ok"] is True
+            assert created["status"] == "created"
+            project_id = created["project"]["id"]
+            assert db.scalar(select(func.count()).select_from(Project)) == 1
+
+            listed = invoke_project_tool(tools[4], {}, owner_context)
+            assert listed["total"] == 1
+            assert listed["projects"][0]["id"] == project_id
+            assert invoke_project_tool(tools[4], {}, other_context)["total"] == 0
+
+            fetched = invoke_project_tool(
+                tools[5],
+                {"project_id": project_id},
+                owner_context,
+            )
+            assert fetched["project"]["title"] == "MPS 实测"
+            hidden = invoke_project_tool(
+                tools[5],
+                {"project_id": project_id},
+                other_context,
+            )
+            assert hidden == {
+                "ok": False,
+                "error": {
+                    "code": "project_not_found",
+                    "message": "Project not found",
+                },
+            }
+            assert (
+                invoke_project_tool(
+                    tools[6],
+                    {"project_id": project_id, "summary": "越权修改"},
+                    other_context,
+                )
+                == hidden
+            )
+            assert (
+                invoke_project_tool(
+                    tools[7],
+                    {"project_id": project_id, "confirmed": True},
+                    other_context,
+                )
+                == hidden
+            )
+
+            updated = invoke_project_tool(
+                tools[6],
+                {"project_id": project_id, "summary": "加入性能对比"},
+                owner_context,
+            )
+            assert updated["project"]["summary"] == "加入性能对比"
+
+            confirmation = invoke_project_tool(
+                tools[7],
+                {"project_id": project_id, "confirmed": False},
+                owner_context,
+            )
+            assert confirmation == {
+                "ok": True,
+                "status": "confirmation_required",
+                "project": {"id": project_id, "title": "MPS 实测"},
+            }
+            assert db.scalar(select(func.count()).select_from(Project)) == 1
+
+            deleted = invoke_project_tool(
+                tools[7],
+                {"project_id": project_id, "confirmed": True},
+                owner_context,
+            )
+            assert deleted == {
+                "ok": True,
+                "status": "deleted",
+                "project_id": project_id,
+            }
+            assert db.scalar(select(func.count()).select_from(Project)) == 0
+    finally:
+        asyncio.run(client.aclose())
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_project_tools_return_safe_context_error() -> None:
+    client, tools = build_tools()
+
+    try:
+        unavailable = invoke_project_tool(
+            tools[3],
+            {
+                "title": "标题",
+                "type": "知识",
+                "audience": "观众",
+                "summary": "简介",
+                "confirmed": False,
+            },
+            None,
+        )
+        assert unavailable == {
+            "ok": False,
+            "error": {
+                "code": "project_context_unavailable",
+                "message": "Authenticated project context is unavailable",
+            },
         }
     finally:
         asyncio.run(client.aclose())

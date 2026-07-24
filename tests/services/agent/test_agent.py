@@ -1,10 +1,12 @@
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 import pytest
 from agents import Agent, RunConfig, Session, TResponseInputItem
+from sqlalchemy.orm import Session as DatabaseSession
 
 from inspire_flow_backend.services.agent import agent as agent_module
 from inspire_flow_backend.services.agent.agent import (
@@ -12,6 +14,7 @@ from inspire_flow_backend.services.agent.agent import (
     AgentService,
     create_agent_service,
 )
+from inspire_flow_backend.services.agent.contracts import AgentRunContext
 
 
 @dataclass
@@ -21,6 +24,7 @@ class RunnerCall:
     max_turns: int
     session: Session | None
     run_config: RunConfig | None
+    context: AgentRunContext | None
 
 
 @dataclass
@@ -36,6 +40,7 @@ class FakeRunner:
         max_turns: int,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> Any:
         self.calls.append(
             RunnerCall(
@@ -44,6 +49,7 @@ class FakeRunner:
                 max_turns=max_turns,
                 session=session,
                 run_config=run_config,
+                context=context,
             )
         )
         return self.result
@@ -64,6 +70,11 @@ def test_factory_builds_agent_with_deterministic_tools() -> None:
             "current_datetime",
             "search_website",
             "fetch_webpage",
+            "create_project",
+            "list_projects",
+            "get_project",
+            "update_project",
+            "delete_project",
         ]
         assert service.agent.instructions == DEFAULT_AGENT_INSTRUCTIONS
         assert "不可信" in DEFAULT_AGENT_INSTRUCTIONS
@@ -156,6 +167,19 @@ def test_default_instructions_protect_context_and_external_operations() -> None:
         assert concept in DEFAULT_AGENT_INSTRUCTIONS
 
 
+def test_default_instructions_require_project_mutation_confirmation() -> None:
+    expected_concepts = [
+        "项目草稿",
+        "明确确认保存",
+        "单独一轮",
+        "确认删除",
+        "其他用户",
+    ]
+
+    for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+
 def test_service_delegates_runs_and_allows_turn_override() -> None:
     expected = object()
     runner = FakeRunner(expected)
@@ -213,6 +237,20 @@ def test_service_delegates_session_input_and_run_config() -> None:
         asyncio.run(client.aclose())
 
 
+def test_service_forwards_trusted_project_context() -> None:
+    runner = FakeRunner(object())
+    client = build_http_client()
+    service = create_agent_service(http_client=client, runner=runner)
+    context = AgentRunContext(db=cast(DatabaseSession, object()), user_id=uuid4())
+
+    try:
+        asyncio.run(service.run("继续项目", context=context))
+
+        assert runner.calls[-1].context is context
+    finally:
+        asyncio.run(client.aclose())
+
+
 def test_service_rejects_empty_input_without_session() -> None:
     client = build_http_client()
     service = create_agent_service(http_client=client, runner=FakeRunner(object()))
@@ -258,8 +296,9 @@ def test_service_does_not_swallow_runner_exceptions() -> None:
             max_turns: int,
             session: Session | None = None,
             run_config: RunConfig | None = None,
+            context: AgentRunContext | None = None,
         ) -> Any:
-            del starting_agent, input, max_turns, session, run_config
+            del starting_agent, input, max_turns, session, run_config, context
             raise expected
 
     client = build_http_client()

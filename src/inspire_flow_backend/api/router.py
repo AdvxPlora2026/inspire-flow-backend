@@ -5,6 +5,7 @@ from inspire_flow_backend.api.routes.conversations import (
 )
 from inspire_flow_backend.api.routes.health import router as health_router
 from inspire_flow_backend.api.routes.memories import router as memories_router
+from inspire_flow_backend.api.routes.projects import router as projects_router
 from inspire_flow_backend.api.routes.sessions import router as sessions_router
 from inspire_flow_backend.api.routes.transcriptions import (
     router as transcriptions_router,
@@ -19,6 +20,7 @@ api_router.include_router(
     tags=["conversations"],
 )
 api_router.include_router(users_router, prefix="/users", tags=["users"])
+api_router.include_router(projects_router, prefix="/projects", tags=["projects"])
 api_router.include_router(
     memories_router,
     prefix="/users/me/memories",

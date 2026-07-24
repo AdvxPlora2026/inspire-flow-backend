@@ -102,6 +102,12 @@ class TranscriptionNotFoundError(ApplicationError):
     message = "Transcription job was not found"
 
 
+class ProjectNotFoundError(ApplicationError):
+    status_code = 404
+    code = "project_not_found"
+    message = "Project was not found"
+
+
 def error_response(
     *,
     status_code: int,

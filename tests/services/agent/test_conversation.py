@@ -31,8 +31,10 @@ from inspire_flow_backend.schemas.conversations import (
     ConversationUpdate,
 )
 from inspire_flow_backend.schemas.memories import MemoryCategory
+from inspire_flow_backend.schemas.projects import ProjectDraft
 from inspire_flow_backend.services.agent.compaction import CompactionInput
 from inspire_flow_backend.services.agent.context import ContextInputFilter
+from inspire_flow_backend.services.agent.contracts import AgentRunContext
 from inspire_flow_backend.services.agent.conversation import run_conversation_turn
 from inspire_flow_backend.services.agent.memory_extraction import (
     AcceptedMemoryCandidate,
@@ -52,6 +54,7 @@ class FakeConversationAgent:
     events: list[str]
     fail: bool = False
     calls: list[tuple[object, RunConfig]] = field(default_factory=list)
+    contexts: list[AgentRunContext] = field(default_factory=list)
     seen_history: list[TResponseInputItem] = field(default_factory=list)
 
     async def run(
@@ -61,13 +64,16 @@ class FakeConversationAgent:
         max_turns: int | None = None,
         session: Session | None = None,
         run_config: RunConfig | None = None,
+        context: AgentRunContext | None = None,
     ) -> object:
         del max_turns
         assert input == []
         assert session is not None
         assert run_config is not None
+        assert context is not None
         self.events.append("agent")
         self.calls.append((session, run_config))
+        self.contexts.append(context)
         self.seen_history = await session.get_items()
         if self.fail:
             raise ModelBehaviorError("test model failure")
@@ -116,6 +122,11 @@ class FakeExtractor:
         self.events.append("extractor")
         self.messages.append(user_message)
         return self.result
+
+
+class UnusedProjectDraftGenerator:
+    async def generate(self, description: str) -> ProjectDraft:
+        raise AssertionError(f"Unexpected project draft: {description}")
 
 
 @pytest.fixture
@@ -224,6 +235,7 @@ def make_runtime(
         conversation_agent=FakeConversationAgent(events, fail=fail_agent),
         compactor=FakeCompactor(events, error=compaction_error),
         memory_extractor=FakeExtractor(events, extraction),
+        project_draft_generator=UnusedProjectDraftGenerator(),
     )
 
 
@@ -266,6 +278,8 @@ def test_turn_orders_compaction_persistence_agent_extraction_and_unlock(
     agent = runtime.conversation_agent
     assert isinstance(agent, FakeConversationAgent)
     assert agent.calls[0][1].trace_include_sensitive_data is False
+    assert agent.contexts[0].db is db
+    assert agent.contexts[0].user_id == user.id
     assert isinstance(agent.calls[0][1].call_model_input_filter, ContextInputFilter)
     assert "top-secret-value" not in str(agent.seen_history)
     assert "[REDACTED_CREDENTIAL]" in str(agent.seen_history)
