@@ -10,7 +10,7 @@ from inspire_flow_backend.services.agent.contracts import (
     Clock,
     HostResolver,
 )
-from inspire_flow_backend.services.agent.tools import build_agent_tools
+from inspire_flow_backend.services.agent.func import build_agent_tools
 
 DEFAULT_AGENT_INSTRUCTIONS = """你是 InspireFlow 中的创作协作 Agent，为 B 站 UP 主服务。
 你不替用户包办创作。你的工作是理解用户真正想表达的内容，保留项目上下文，

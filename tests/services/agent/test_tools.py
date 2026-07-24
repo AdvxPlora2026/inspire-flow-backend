@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import json
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -11,7 +12,7 @@ from inspire_flow_backend.services.agent.contracts import (
     AgentToolError,
     AgentToolSettings,
 )
-from inspire_flow_backend.services.agent.tools import (
+from inspire_flow_backend.services.agent.func import (
     build_agent_tools,
     get_current_datetime,
 )
@@ -40,6 +41,34 @@ def build_tools():
 
 def invoke_tool(tool, arguments: dict[str, object]) -> str:
     return asyncio.run(invoke_tool_async(tool, arguments))
+
+
+def test_agent_functions_are_defined_under_func_package() -> None:
+    expected_definitions = {
+        "inspire_flow_backend.services.agent.func.current_datetime": [
+            "build_current_datetime_tool",
+            "get_current_datetime",
+        ],
+        "inspire_flow_backend.services.agent.func.search_website": [
+            "build_search_website_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.fetch_webpage": [
+            "build_fetch_webpage_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.registry": [
+            "build_agent_tools",
+        ],
+    }
+
+    for module_name, definitions in expected_definitions.items():
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            pytest.fail(f"Agent function module is missing: {module_name}")
+
+        for definition in definitions:
+            value = getattr(module, definition)
+            assert value.__module__ == module_name
 
 
 async def invoke_tool_async(tool, arguments: dict[str, object]) -> str:
