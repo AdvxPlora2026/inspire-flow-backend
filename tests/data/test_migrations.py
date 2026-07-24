@@ -13,6 +13,7 @@ CONTEXT_TABLES = {
     "agent_messages",
     "user_memories",
 }
+STT_TABLES = {"transcription_jobs"}
 
 
 def make_config(database_path: Path) -> Config:
@@ -67,6 +68,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "users",
         "auth_sessions",
         *CONTEXT_TABLES,
+        *STT_TABLES,
     } <= set(inspector.get_table_names())
     with engine.connect() as connection:
         assert (
@@ -129,6 +131,22 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "created_at",
         "updated_at",
     }
+    assert {column["name"] for column in inspector.get_columns("transcription_jobs")} == {
+        "id",
+        "user_id",
+        "status",
+        "language",
+        "use_itn",
+        "transcript_ciphertext",
+        "detected_language",
+        "duration_seconds",
+        "error_code",
+        "attempt_count",
+        "started_at",
+        "completed_at",
+        "created_at",
+        "updated_at",
+    }
 
     assert named_constraints(
         inspector,
@@ -153,6 +171,10 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "ck_user_memories_status_valid",
         "ck_user_memories_origin_valid",
     } <= named_constraints(inspector, "user_memories", "get_check_constraints")
+    assert {
+        "ck_transcription_jobs_status_valid",
+        "ck_transcription_jobs_attempt_count_nonnegative",
+    } <= named_constraints(inspector, "transcription_jobs", "get_check_constraints")
 
     assert {index["name"] for index in inspector.get_indexes("agent_conversations")} == {
         "ix_agent_conversations_user_id_archived_at",
@@ -166,6 +188,9 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         "ix_user_memories_source_conversation_id",
         "ix_user_memories_user_id_status_is_pinned_updated_at",
     }
+    assert {index["name"] for index in inspector.get_indexes("transcription_jobs")} == {
+        "ix_transcription_jobs_user_id_created_at",
+    }
 
     expected_foreign_keys = {
         ("user_profiles", "user_id"): ("users", "CASCADE"),
@@ -174,6 +199,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         ("user_memories", "user_id"): ("users", "CASCADE"),
         ("user_memories", "source_conversation_id"): ("agent_conversations", "SET NULL"),
         ("user_memories", "source_message_id"): ("agent_messages", "SET NULL"),
+        ("transcription_jobs", "user_id"): ("users", "CASCADE"),
     }
     for (table_name, column_name), (referred_table, on_delete) in expected_foreign_keys.items():
         matching = [
@@ -186,7 +212,7 @@ def test_migration_upgrades_backfills_and_downgrades_sqlite(tmp_path: Path) -> N
         assert matching[0]["options"]["ondelete"] == on_delete
 
     command.downgrade(config, BASE_REVISION)
-    assert CONTEXT_TABLES.isdisjoint(sa.inspect(engine).get_table_names())
+    assert (CONTEXT_TABLES | STT_TABLES).isdisjoint(sa.inspect(engine).get_table_names())
     assert {"users", "auth_sessions"} <= set(sa.inspect(engine).get_table_names())
 
     command.downgrade(config, "base")

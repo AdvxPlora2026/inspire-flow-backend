@@ -78,6 +78,30 @@ class AgentRunFailedError(ApplicationError):
     message = "Agent could not complete the requested turn"
 
 
+class SttUnavailableError(ApplicationError):
+    status_code = 503
+    code = "stt_unavailable"
+    message = "Speech transcription is unavailable"
+
+
+class AudioTooLargeError(ApplicationError):
+    status_code = 413
+    code = "audio_too_large"
+    message = "Audio upload exceeds the configured size limit"
+
+
+class UnsupportedAudioTypeError(ApplicationError):
+    status_code = 415
+    code = "unsupported_audio_type"
+    message = "Audio format is not supported"
+
+
+class TranscriptionNotFoundError(ApplicationError):
+    status_code = 404
+    code = "transcription_not_found"
+    message = "Transcription job was not found"
+
+
 def error_response(
     *,
     status_code: int,

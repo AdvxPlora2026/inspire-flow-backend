@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import (
     AnyHttpUrl,
@@ -35,6 +36,21 @@ class Settings(BaseSettings):
     agent_run_lock_ttl_seconds: int = Field(default=600, gt=0)
     context_encryption_key: SecretStr | None = None
     context_encryption_key_file: Path = Path(".inspireflow-context.key")
+    stt_enabled: bool = False
+    stt_broker_url: str = "redis://127.0.0.1:6379/0"
+    stt_queue: str = Field(default="stt", min_length=1)
+    stt_spool_dir: Path = Path(".inspireflow-stt-spool")
+    stt_model_cache_dir: Path = Path(".inspireflow-models")
+    stt_model: str = Field(default="FunAudioLLM/SenseVoiceSmall", min_length=1)
+    stt_model_hub: Literal["hf", "ms"] = "hf"
+    stt_hf_disable_xet: bool = True
+    stt_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    stt_max_upload_mib: int = Field(default=64, gt=0)
+    stt_max_duration_seconds: int = Field(default=300, gt=0)
+    stt_soft_time_limit_seconds: int = Field(default=600, gt=0)
+    stt_hard_time_limit_seconds: int = Field(default=660, gt=0)
+    stt_max_attempts: int = Field(default=3, gt=0)
+    stt_ready_ttl_seconds: int = Field(default=30, gt=0)
 
     @field_validator("context_encryption_key", mode="before")
     @classmethod
@@ -50,6 +66,8 @@ class Settings(BaseSettings):
         )
         if reserved_context > self.agent_context_max_characters:
             raise ValueError("summary and memory budgets cannot exceed the hard context budget")
+        if self.stt_hard_time_limit_seconds <= self.stt_soft_time_limit_seconds:
+            raise ValueError("STT hard time limit must exceed the soft time limit")
         return self
 
 

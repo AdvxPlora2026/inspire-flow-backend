@@ -12,6 +12,7 @@ from inspire_flow_backend.data.types import UTCDateTime
 if TYPE_CHECKING:
     from inspire_flow_backend.data.models.agent_conversation import AgentConversation
     from inspire_flow_backend.data.models.auth_session import AuthSession
+    from inspire_flow_backend.data.models.transcription_job import TranscriptionJob
     from inspire_flow_backend.data.models.user_memory import UserMemory
     from inspire_flow_backend.data.models.user_profile import UserProfile
 
@@ -59,6 +60,11 @@ class User(Base):
         passive_deletes=True,
     )
     memories: Mapped[list["UserMemory"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    transcription_jobs: Mapped[list["TranscriptionJob"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

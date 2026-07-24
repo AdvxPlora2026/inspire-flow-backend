@@ -107,6 +107,70 @@ def test_agent_context_trigger_must_not_exceed_hard_limit(monkeypatch) -> None:
         config.get_settings.cache_clear()
 
 
+def test_stt_settings_have_isolated_bounded_defaults(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    config = import_module("inspire_flow_backend.core.config")
+    config.get_settings.cache_clear()
+
+    try:
+        settings = config.get_settings()
+
+        assert settings.stt_enabled is False
+        assert settings.stt_broker_url == "redis://127.0.0.1:6379/0"
+        assert settings.stt_queue == "stt"
+        assert settings.stt_spool_dir == Path(".inspireflow-stt-spool")
+        assert settings.stt_model_cache_dir == Path(".inspireflow-models")
+        assert settings.stt_model == "FunAudioLLM/SenseVoiceSmall"
+        assert settings.stt_model_hub == "hf"
+        assert settings.stt_hf_disable_xet is True
+        assert settings.stt_device == "auto"
+        assert settings.stt_max_upload_mib == 64
+        assert settings.stt_max_duration_seconds == 300
+        assert settings.stt_soft_time_limit_seconds == 600
+        assert settings.stt_hard_time_limit_seconds == 660
+        assert settings.stt_max_attempts == 3
+        assert settings.stt_ready_ttl_seconds == 30
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_stt_device_accepts_supported_values(monkeypatch) -> None:
+    config = import_module("inspire_flow_backend.core.config")
+
+    for device in ("auto", "cpu", "cuda", "mps"):
+        monkeypatch.setenv("APP_STT_DEVICE", device)
+        config.get_settings.cache_clear()
+        assert config.get_settings().stt_device == device
+
+    config.get_settings.cache_clear()
+
+
+def test_stt_device_rejects_unknown_value(monkeypatch) -> None:
+    monkeypatch.setenv("APP_STT_DEVICE", "metal")
+    config = import_module("inspire_flow_backend.core.config")
+    config.get_settings.cache_clear()
+
+    try:
+        with pytest.raises(ValidationError):
+            config.get_settings()
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_stt_hard_limit_must_exceed_soft_limit(monkeypatch) -> None:
+    monkeypatch.setenv("APP_STT_SOFT_TIME_LIMIT_SECONDS", "600")
+    monkeypatch.setenv("APP_STT_HARD_TIME_LIMIT_SECONDS", "600")
+    config = import_module("inspire_flow_backend.core.config")
+    config.get_settings.cache_clear()
+
+    try:
+        with pytest.raises(ValidationError):
+            config.get_settings()
+    finally:
+        config.get_settings.cache_clear()
+
+
 def test_model_settings_load_provider_neutral_environment_names(monkeypatch) -> None:
     monkeypatch.setenv("MODEL_API_KEY", "test-key")
     monkeypatch.setenv("MODEL_NAME", "test-model")

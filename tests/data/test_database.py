@@ -13,3 +13,15 @@ def test_enables_sqlite_foreign_keys(tmp_path: Path) -> None:
 
     assert enabled == 1
     engine.dispose()
+
+
+def test_configures_sqlite_for_bounded_cross_process_writes(tmp_path: Path) -> None:
+    engine = create_database_engine(f"sqlite:///{tmp_path / 'concurrent.db'}")
+
+    with engine.connect() as connection:
+        journal_mode = connection.scalar(text("PRAGMA journal_mode"))
+        busy_timeout = connection.scalar(text("PRAGMA busy_timeout"))
+
+    assert journal_mode == "wal"
+    assert busy_timeout == 5_000
+    engine.dispose()
