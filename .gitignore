@@ -2,8 +2,6 @@
 .agents/
 .codex/
 .code/
-.trellis/
-AGENTS.md
 
 # Python bytecode
 __pycache__/
@@ -20,6 +18,7 @@ dist/
 
 # Virtual environments
 .venv/
+.venv-stt/
 venv/
 env/
 ENV/
@@ -44,6 +43,8 @@ htmlcov/
 .env.*
 !.env.example
 .inspireflow-context.key
+.inspireflow-models/
+.inspireflow-stt-spool/
 
 # Logs
 *.log

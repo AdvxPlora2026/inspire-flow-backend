@@ -48,11 +48,22 @@ curl http://127.0.0.1:8000/api/v1/health
 
 ```json
 {
-  "status": "ok",
+  "status": "degraded",
+  "services": {
+    "database": "ok",
+    "model": "not_configured",
+    "injective": "not_configured"
+  },
+  "version": "dev",
   "service": "Inspire Flow Backend",
   "environment": "development"
 }
 ```
+
+The endpoint performs a real database probe without calling the model provider.
+Missing optional model or Injective configuration returns `200` with
+`status: "degraded"`. A database failure returns `503` with the same typed
+response shape and `status: "unavailable"`.
 
 The REST API supports registration, login, creator profiles, encrypted
 long-term memories, durable Agent conversations, and logout. See
@@ -64,6 +75,15 @@ The InspireFlow Agent includes date/time, no-key web search, safe webpage
 fetching, local rolling context compression, and user-scoped memory. See
 [Agent service handoff](docs/prompt.md) for its prompt, tools, provider
 configuration, limits, and security boundaries.
+
+Authenticated asynchronous speech transcription is available through an
+isolated Celery worker and SenseVoice-Small. The API and model worker use
+separate processes and may use separate uv environments, so a native inference
+failure does not terminate the API. Successful results include clean text,
+detected language, aggregate emotion labels, and audio events as structured
+JSON. See
+[SenseVoice STT handoff](docs/HANDOFF_STT.md) for Redis, worker, device, and
+REST usage.
 
 ## Project structure
 
@@ -93,6 +113,7 @@ Settings are loaded from environment variables and an optional `.env` file.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APP_NAME` | `Inspire Flow Backend` | OpenAPI application name and service identity |
+| `APP_VERSION` | `dev` | Deployment version, release identifier, or Git SHA |
 | `APP_ENVIRONMENT` | `development` | Runtime environment label |
 | `APP_DEBUG` | `false` | FastAPI debug mode |
 | `APP_API_V1_PREFIX` | `/api/v1` | Prefix for version 1 endpoints |
@@ -107,9 +128,24 @@ Settings are loaded from environment variables and an optional `.env` file.
 | `APP_AGENT_MEMORY_MAX_ITEMS` | `30` | Maximum active memories injected per turn |
 | `APP_AGENT_MEMORY_MAX_CHARACTERS` | `8000` | Memory-section character budget |
 | `APP_AGENT_RUN_LOCK_TTL_SECONDS` | `600` | Stale conversation-run lock timeout |
-| `DEEPSEEK_API_KEY` | blank | DeepSeek-compatible API credential |
-| `DEEPSEEK_MODEL` | blank | Model name used by the Agent, compactor, and extractor |
-| `DEEPSEEK_BASE_URL` | blank | OpenAI-compatible DeepSeek endpoint |
+| `APP_STT_ENABLED` | `false` | Enable asynchronous transcription submissions |
+| `APP_STT_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery Redis broker |
+| `APP_STT_QUEUE` | `stt` | Dedicated Celery queue |
+| `APP_STT_SPOOL_DIR` | `.inspireflow-stt-spool` | Temporary raw-audio directory |
+| `APP_STT_MODEL_CACHE_DIR` | `.inspireflow-models` | SenseVoice model cache |
+| `APP_STT_MODEL` | `FunAudioLLM/SenseVoiceSmall` | FunASR model identifier |
+| `APP_STT_MODEL_HUB` | `hf` | `hf` for Hugging Face or `ms` for ModelScope |
+| `APP_STT_HF_DISABLE_XET` | `true` | Use standard HTTP downloads for proxy compatibility |
+| `APP_STT_DEVICE` | `auto` | `auto`, `cpu`, `cuda`, or `mps` |
+| `APP_STT_MAX_UPLOAD_MIB` | `64` | Maximum upload size |
+| `APP_STT_MAX_DURATION_SECONDS` | `300` | Maximum decoded audio duration |
+| `APP_STT_SOFT_TIME_LIMIT_SECONDS` | `600` | Celery soft task timeout |
+| `APP_STT_HARD_TIME_LIMIT_SECONDS` | `660` | Celery child replacement timeout |
+| `APP_STT_MAX_ATTEMPTS` | `3` | Worker-loss attempt bound |
+| `APP_STT_READY_TTL_SECONDS` | `30` | Model readiness heartbeat TTL |
+| `MODEL_API_KEY` | blank | OpenAI-compatible Chat Completions API credential |
+| `MODEL_NAME` | blank | Model name used by the Agent, compactor, and extractor |
+| `MODEL_BASE_URL` | blank | API root or complete `/chat/completions` endpoint |
 
 Keep secrets in `.env`; it is ignored by Git. `.env.example` contains only
 safe defaults and remains tracked. In local development, the first encrypted

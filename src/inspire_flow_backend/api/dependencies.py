@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from inspire_flow_backend.services.sessions import (
     AuthenticatedSession,
     resolve_session,
 )
+from inspire_flow_backend.services.transcriptions import TranscriptionPublisher
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -49,3 +50,13 @@ def get_current_session(
     ):
         raise InvalidSessionError
     return resolve_session(db, credentials.credentials)
+
+
+def get_transcription_publisher(request: Request) -> TranscriptionPublisher:
+    publisher = getattr(request.app.state, "transcription_publisher", None)
+    if publisher is None:
+        from inspire_flow_backend.workers.celery_app import CeleryTranscriptionPublisher
+
+        publisher = CeleryTranscriptionPublisher()
+        request.app.state.transcription_publisher = publisher
+    return publisher

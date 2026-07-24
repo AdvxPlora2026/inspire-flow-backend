@@ -16,13 +16,15 @@ uv run alembic upgrade head
 `.env` 至少需要配置一个 OpenAI 兼容模型：
 
 ```dotenv
-DEEPSEEK_API_KEY=<由密钥管理系统注入>
-DEEPSEEK_MODEL=<模型名称>
-DEEPSEEK_BASE_URL=https://<provider-host>/v1
+MODEL_API_KEY=<由密钥管理系统注入>
+MODEL_NAME=<模型名称>
+MODEL_BASE_URL=https://<provider-host>/v1
 ```
 
-不要把真实值复制到示例、日志或提交中。资料、记忆和对话列表不调用模型；只有
-发送消息时需要这三项配置。
+`MODEL_BASE_URL` 可以填写 API 根地址，也可以填写完整的
+`/chat/completions` 地址；运行时会自动规范化。只要服务兼容 OpenAI Chat
+Completions 协议，就不限定具体模型厂商。不要把真实值复制到示例、日志或提交
+中。资料、记忆和对话列表不调用模型；只有发送消息时需要这三项配置。
 
 对话消息、摘要和记忆内容使用 Fernet 加密。部署环境建议通过
 `APP_CONTEXT_ENCRYPTION_KEY` 注入固定密钥。本地未配置时，应用会创建
