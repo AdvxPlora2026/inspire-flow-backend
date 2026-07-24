@@ -13,6 +13,7 @@ from inspire_flow_backend.api.dependencies import (
     get_agent_runtime,
     get_agent_stream_runtime_factory,
     get_context_cipher,
+    get_injective_provider,
 )
 from inspire_flow_backend.core.config import Settings
 from inspire_flow_backend.core.context_security import ContextCipher
@@ -39,8 +40,41 @@ from inspire_flow_backend.services.agent.memory_extraction import (
     MemoryExtractionResult,
 )
 from inspire_flow_backend.services.agent.runtime import AgentRuntime
+from inspire_flow_backend.services.injective import (
+    ChainBroadcast,
+    ChainBroadcastError,
+    ChainConfirmation,
+)
 
 TEST_CONTEXT_KEY = "79zUG7lNhJ1eTm2N-oWpgStPtMzGxJTgQ3wp8bVh3Y0="
+
+
+class FakeInjectiveProvider:
+    network = "testnet"
+    chain_id = "injective-888"
+
+    def __init__(self) -> None:
+        self.fail_next = False
+        self.memos: list[str] = []
+        self.confirmations: dict[str, ChainConfirmation] = {}
+        self._counter = 0
+
+    def broadcast(self, memo: str) -> ChainBroadcast:
+        if self.fail_next:
+            self.fail_next = False
+            raise ChainBroadcastError("fake broadcast failure", retryable=True)
+        self._counter += 1
+        transaction_hash = f"0x{self._counter:064x}"
+        self.memos.append(memo)
+        return ChainBroadcast(
+            network=self.network,
+            chain_id=self.chain_id,
+            transaction_hash=transaction_hash,
+            explorer_url=(f"https://testnet.blockscout.injective.network/tx/{transaction_hash}"),
+        )
+
+    def get_transaction_status(self, transaction_hash: str) -> ChainConfirmation:
+        return self.confirmations.get(transaction_hash, "confirmed")
 
 
 class FakeApiConversationAgent:
@@ -261,10 +295,16 @@ def db_session_factory(
 
 
 @pytest.fixture
+def fake_injective_provider() -> FakeInjectiveProvider:
+    return FakeInjectiveProvider()
+
+
+@pytest.fixture
 def client(
     db_session_factory: sessionmaker[Session],
     context_cipher: ContextCipher,
     fake_agent_runtime: AgentRuntime,
+    fake_injective_provider: FakeInjectiveProvider,
 ) -> Generator[TestClient]:
     application = create_app()
 
@@ -278,6 +318,7 @@ def client(
     application.dependency_overrides[get_db_session] = override_db_session
     application.dependency_overrides[get_context_cipher] = lambda: context_cipher
     application.dependency_overrides[get_agent_runtime] = override_agent_runtime
+    application.dependency_overrides[get_injective_provider] = lambda: fake_injective_provider
     application.dependency_overrides[get_agent_stream_runtime_factory] = lambda: (
         lambda: fake_agent_runtime
     )

@@ -275,6 +275,24 @@ class OrphanedInspirationsConfirmationRequiredError(ApplicationError):
         )
 
 
+class CommercialTaskNotFoundError(ApplicationError):
+    status_code = 404
+    code = "commercial_task_not_found"
+    message = "Commercial task was not found"
+
+
+class SequenceConflictError(ApplicationError):
+    status_code = 409
+    code = "sequence_conflict"
+    message = "The requested action is out of order for this commercial task"
+
+
+class InjectiveUnavailableError(ApplicationError):
+    status_code = 503
+    code = "injective_unavailable"
+    message = "Injective chain integration is not configured or unavailable"
+
+
 def error_response(
     *,
     status_code: int,

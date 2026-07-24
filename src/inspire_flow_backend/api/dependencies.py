@@ -17,6 +17,10 @@ from inspire_flow_backend.services.agent.runtime import (
 )
 from inspire_flow_backend.services.agent.streaming import RuntimeFactory
 from inspire_flow_backend.services.idempotency import prepare_idempotency
+from inspire_flow_backend.services.injective import (
+    InjectiveProvider,
+    create_injective_provider,
+)
 from inspire_flow_backend.services.sessions import (
     AuthenticatedSession,
     resolve_session,
@@ -103,3 +107,9 @@ def get_transcription_publisher(request: Request) -> TranscriptionPublisher:
         publisher = CeleryTranscriptionPublisher()
         request.app.state.transcription_publisher = publisher
     return publisher
+
+
+def get_injective_provider(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> InjectiveProvider | None:
+    return create_injective_provider(settings)

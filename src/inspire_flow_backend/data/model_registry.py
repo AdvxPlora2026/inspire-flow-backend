@@ -13,6 +13,12 @@ def register_models() -> None:
         BrandOrganization,
         CreatorInboxItem,
     )
+    from inspire_flow_backend.data.models.commercial import (
+        ChainTransaction,
+        CommercialTask,
+        CommercialTaskSplit,
+        CommercialTaskSubmission,
+    )
     from inspire_flow_backend.data.models.idempotency import AgentTurnRun, IdempotencyRecord
     from inspire_flow_backend.data.models.inspiration import Inspiration
     from inspire_flow_backend.data.models.project import Project
@@ -42,6 +48,10 @@ def register_models() -> None:
         BrandInvitation.__tablename__,
         BrandMembership.__tablename__,
         BrandOrganization.__tablename__,
+        ChainTransaction.__tablename__,
+        CommercialTask.__tablename__,
+        CommercialTaskSplit.__tablename__,
+        CommercialTaskSubmission.__tablename__,
         CreatorInboxItem.__tablename__,
         CreatorWorkshop.__tablename__,
         IdempotencyRecord.__tablename__,

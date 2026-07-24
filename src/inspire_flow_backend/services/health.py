@@ -24,12 +24,19 @@ def build_health_response(
         and model_settings.base_url is not None
         else "not_configured"
     )
-    overall_status = "unavailable" if database_status == "unavailable" else "degraded"
+    injective_status = "ok" if settings.injective_private_key is not None else "not_configured"
+    if database_status == "unavailable":
+        overall_status = "unavailable"
+    elif model_status == "ok" and injective_status == "ok":
+        overall_status = "ok"
+    else:
+        overall_status = "degraded"
     return HealthResponse(
         status=overall_status,
         services=HealthServices(
             database=database_status,
             model=model_status,
+            injective=injective_status,
         ),
         version=settings.version,
         service=settings.name,

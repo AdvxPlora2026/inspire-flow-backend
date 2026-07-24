@@ -51,8 +51,23 @@ class Settings(BaseSettings):
     stt_hard_time_limit_seconds: int = Field(default=660, gt=0)
     stt_max_attempts: int = Field(default=3, gt=0)
     stt_ready_ttl_seconds: int = Field(default=30, gt=0)
+    injective_network: Literal["testnet", "mainnet"] = "testnet"
+    injective_private_key: SecretStr | None = None
+    injective_rpc_url: str | None = None
+    injective_explorer_base_url: str | None = None
+    injective_broadcast_denom: str = Field(default="inj", min_length=1)
+    injective_broadcast_amount: str = Field(
+        default="0.000000000000000001",
+        min_length=1,
+    )
 
-    @field_validator("context_encryption_key", mode="before")
+    @field_validator(
+        "context_encryption_key",
+        "injective_private_key",
+        "injective_rpc_url",
+        "injective_explorer_base_url",
+        mode="before",
+    )
     @classmethod
     def normalize_optional_context_key(cls, value: object) -> object:
         return _none_if_blank(value)

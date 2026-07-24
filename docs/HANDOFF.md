@@ -168,6 +168,10 @@ curl --fail-with-body "$API_BASE/health"
 `status` 可能是 `ok`、`degraded` 或 `unavailable`。数据库不可用时返回 `503`，
 此时响应结构不变，`services.database` 为 `unavailable`。
 
+`services.injective` 在配置了 `APP_INJECTIVE_PRIVATE_KEY` 时为 `ok`，否则为
+`not_configured`。只有数据库、模型、Injective 三者都就绪时 `status` 才是 `ok`；
+缺少模型或链上配置时为 `degraded`，接口仍可正常使用其它能力。
+
 ## 4. 用户与登录
 
 公开用户结构如下：
@@ -1811,7 +1815,191 @@ data: {"turn_id":"...","user_message":{...},"assistant_message":{...}}
 `turn.completed`，不会重放所有增量。流开始前的鉴权、校验和资源错误仍是普通
 HTTP 错误；响应头发出后的失败以 `turn.failed` 结束。
 
-## 18. 新增错误码
+## 18. 商业任务与链上存证（Injective）
+
+商业任务把创作结算流程写到 Injective 链上做存证。链上只写商业事实摘要
+（action、任务 id、制品 sha256、金额、币种），**绝不写标题、正文等隐私内容**。
+所有写接口都需要登录并携带幂等键；未配置 `APP_INJECTIVE_PRIVATE_KEY` 时写接口
+返回 `503 injective_unavailable`。
+
+任务状态机按固定顺序推进，乱序返回 `409 sequence_conflict`：
+
+```
+created → escrow_funded（创建即托管）→ submission_recorded（可重复提交）
+        → authorization_activated（授权）→ settlement_released（结算）
+```
+
+每一步都会先在同一事务里写入一条 `prepared` 链交易，再尝试广播。链交易状态为
+`prepared → broadcast → confirmed / failed`。**未从网络查到确认前不会报
+`confirmed`**；读取 proof 时会补发失败可重试的交易并刷新确认状态。
+
+任务公开结构：
+
+```json
+{
+  "id": "b1c2...",
+  "project_id": "31baf982-bcca-478e-bf81-2852825813f8",
+  "user_id": "9f979b61-77cc-4294-945d-dd0dc96bb2d3",
+  "title": "品牌联名短视频",
+  "budget": { "amount": "100", "denom": "inj" },
+  "deadline": "2026-08-01T10:00:00Z",
+  "status": "escrow_funded",
+  "splits": [
+    { "party_id": "creator", "bps": 7000 },
+    { "party_id": "platform", "bps": 3000 }
+  ],
+  "created_at": "2026-07-24T10:00:00Z",
+  "updated_at": "2026-07-24T10:00:00Z"
+}
+```
+
+字段约束：
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| `project_id` | string | 当前用户名下的项目 UUID |
+| `title` | string | 1～200 |
+| `budget.amount` | string | 正的十进制字符串，最多 18 位小数 |
+| `budget.denom` | string | 1～16，例如 `inj` 或业务结算币种 |
+| `deadline` | string | 带时区偏移的 ISO 时间 |
+| `splits` | array | 1～16 项；`bps` 各 1～10000，总和必须恰好 `10000`；`party_id` 唯一 |
+
+> `budget.denom` 只是记在链上 memo 和数据库里的结算币种标签，不影响链上 gas。
+> 交易 gas 始终由钱包里的原生币（Injective 上为 INJ）支付。
+
+### POST /api/v1/commercial-tasks
+
+创建商业任务，成功后立即进入 `escrow_funded` 并写入首条链交易。
+
+```bash
+curl --fail-with-body \
+  --request POST "$API_BASE/commercial-tasks" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "project_id": "31baf982-bcca-478e-bf81-2852825813f8",
+    "title": "品牌联名短视频",
+    "budget": { "amount": "100", "denom": "inj" },
+    "deadline": "2026-08-01T10:00:00Z",
+    "splits": [
+      { "party_id": "creator", "bps": 7000 },
+      { "party_id": "platform", "bps": 3000 }
+    ]
+  }'
+```
+
+成功返回 `201` 和任务结构（`status` 为 `escrow_funded`）。项目不属于当前用户时
+返回 `404 project_not_found`；分账不满足约束时返回 `422 validation_error`。
+
+### POST /api/v1/commercial-tasks/{task_id}/submissions
+
+记录一次制品提交，只上链摘要。可对同一任务多次提交。
+
+```bash
+curl --fail-with-body \
+  --request POST "$API_BASE/commercial-tasks/$TASK_ID/submissions" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "artifact_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "artifact_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "delivery_url": "https://example.com/artifacts/final.mp4"
+  }'
+```
+
+| 字段 | 类型 | 约束 |
+| --- | --- | --- |
+| `artifact_id` | string | 制品 UUID |
+| `artifact_sha256` | string | 64 位小写 hex 摘要 |
+| `delivery_url` | string | HTTP(S) 地址，最长 2048 |
+
+首次提交把任务推进到 `submission_recorded`。成功返回 `201`：
+
+```json
+{
+  "id": "c3d4...",
+  "task_id": "b1c2...",
+  "artifact_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "artifact_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "delivery_url": "https://example.com/artifacts/final.mp4",
+  "created_at": "2026-07-24T11:00:00Z"
+}
+```
+
+### POST /api/v1/commercial-tasks/{task_id}/authorize
+
+把任务从 `submission_recorded` 推进到 `authorization_activated`。
+
+```bash
+curl --fail-with-body \
+  --request POST "$API_BASE/commercial-tasks/$TASK_ID/authorize" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+成功返回 `200` 和任务结构；状态不满足前置条件时返回 `409 sequence_conflict`。
+
+### POST /api/v1/commercial-tasks/{task_id}/settle
+
+把任务从 `authorization_activated` 推进到 `settlement_released`，写入结算链交易
+（携带金额与币种）。
+
+```bash
+curl --fail-with-body \
+  --request POST "$API_BASE/commercial-tasks/$TASK_ID/settle" \
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
+```
+
+成功返回 `200` 和任务结构；乱序返回 `409 sequence_conflict`。
+
+### GET /api/v1/commercial-tasks/{task_id}/proof
+
+返回任务当前状态、全部提交记录，以及按时间排序的链交易列表。读取时会补发失败
+可重试的交易并向网络查询确认状态，因此可能把 `broadcast` 刷新为 `confirmed`。
+此接口不需要幂等键。
+
+```bash
+curl --fail-with-body "$API_BASE/commercial-tasks/$TASK_ID/proof" \
+  --header "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+成功返回 `200`：
+
+```json
+{
+  "task": { "id": "b1c2...", "status": "settlement_released", "...": "（同任务结构）" },
+  "submissions": [ { "id": "c3d4...", "...": "（同提交结构）" } ],
+  "transactions": [
+    {
+      "id": "d5e6...",
+      "action": "escrow_funded",
+      "status": "confirmed",
+      "network": "testnet",
+      "chain_id": "injective-888",
+      "transaction_hash": "0xabc...",
+      "explorer_url": "https://testnet.blockscout.injective.network/tx/0xabc...",
+      "artifact_sha256": null,
+      "amount": null,
+      "denom": null,
+      "failure_reason": null,
+      "retryable": null,
+      "submitted_at": "2026-07-24T10:00:01Z",
+      "confirmed_at": "2026-07-24T10:00:05Z",
+      "created_at": "2026-07-24T10:00:00Z"
+    }
+  ]
+}
+```
+
+链交易字段：`action` 与任务动作对应；`status` 为 `prepared|broadcast|confirmed|failed`；
+`chain_id` 是链原生 id（testnet `injective-888`、mainnet `injective-1`）；失败时
+`failure_reason` 给出原因、`retryable` 标记是否可重试，`transaction_hash` 保留原始哈希
+供排查。前端在 `status` 变为 `confirmed` 前不应对用户声称已上链完成。
+
+## 19. 新增错误码
 
 | HTTP | `error.code` | 说明 |
 | --- | --- | --- |
@@ -1831,8 +2019,11 @@ HTTP 错误；响应头发出后的失败以 `turn.failed` 结束。
 | 409 | `idempotency_request_in_progress` | 同一幂等请求仍在运行 |
 | 409 | `idempotency_outcome_unknown` | 上一次执行异常中断，结果无法安全重放；改用新键重试 |
 | 422 | `invalid_workshop_contact` | 联系方式格式不合法 |
+| 404 | `commercial_task_not_found` | 商业任务不存在，或不属于当前用户 |
+| 409 | `sequence_conflict` | 商业任务动作乱序（不满足状态机前置条件） |
+| 503 | `injective_unavailable` | 未配置私钥或链集成不可用 |
 
-## 19. 常见错误码
+## 20. 常见错误码
 
 | HTTP | `error.code` | 处理建议 |
 | --- | --- | --- |
@@ -1860,7 +2051,7 @@ HTTP 错误；响应头发出后的失败以 `turn.failed` 结束。
 `401 invalid_session` 还会返回 `WWW-Authenticate: Bearer`。未知 HTTP 错误使用
 `http_error`，客户端可以按状态码给出通用提示，同时记录完整响应供排查。
 
-## 20. Agent 内部工具
+## 21. Agent 内部工具
 
 下面这些是 Agent 运行时的 function tools，不是公开 HTTP API，因此没有对应的
 `curl` 地址。前端需要项目、灵感或用户资料功能时，应调用前文的 REST 接口；
@@ -1883,7 +2074,7 @@ HTTP 错误；响应头发出后的失败以 `turn.failed` 结束。
 先说明影响并取得用户确认。工具不能绕过用户隔离，也不能声称已经保存、发布、
 付款或授权；只有实际工具结果成功后，才能向用户确认操作完成。
 
-## 21. 推荐接入顺序
+## 22. 推荐接入顺序
 
 一个最小可用客户端可以按这个顺序接入：
 
@@ -1893,6 +2084,8 @@ HTTP 错误；响应头发出后的失败以 `turn.failed` 结束。
 4. 接入项目、灵感的列表与编辑。
 5. 用对话 UUID 作为 Agent `session_id`，接入消息发送和增量拉取。
 6. 最后接入长期记忆管理、删除影响确认和异步 STT。
+7. 需要链上存证时接入商业任务：先看健康检查的 `services.injective` 是否为 `ok`，
+   再按创建 → 提交 → 授权 → 结算 的顺序推进，并用 proof 接口展示链交易确认状态。
 
 联调时不要把真实模型密钥、登录凭据或用户隐私写入测试脚本和 Git。需要排查
 具体字段时，以运行中服务的 `/openapi.json` 为最后依据。

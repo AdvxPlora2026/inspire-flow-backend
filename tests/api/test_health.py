@@ -28,6 +28,7 @@ def build_health_client(
     *,
     db: HealthProbeSession,
     model_settings: ModelSettings,
+    injective_private_key: str | None = None,
 ) -> TestClient:
     application = create_app()
 
@@ -40,6 +41,7 @@ def build_health_client(
         name="Inspire Flow Test",
         environment="test",
         version="test-sha",
+        injective_private_key=injective_private_key,
     )
     application.dependency_overrides[get_model_settings] = lambda: model_settings
     return TestClient(application)
@@ -70,6 +72,31 @@ def test_health_check_reports_degraded_until_injective_is_configured() -> None:
         "environment": "test",
     }
     assert db.statements == ["SELECT 1"]
+
+
+def test_health_check_reports_ok_when_all_services_configured() -> None:
+    db = HealthProbeSession()
+    model_settings = ModelSettings(
+        _env_file=None,
+        api_key="test-key",
+        name="test-model",
+        base_url="https://model.example/v1",
+    )
+
+    with build_health_client(
+        db=db,
+        model_settings=model_settings,
+        injective_private_key="0x" + "1" * 64,
+    ) as client:
+        response = client.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["services"] == {
+        "database": "ok",
+        "model": "ok",
+        "injective": "ok",
+    }
 
 
 def test_health_check_reports_missing_model_configuration() -> None:

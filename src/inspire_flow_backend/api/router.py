@@ -4,6 +4,9 @@ from inspire_flow_backend.api.routes.brands import (
     invitation_router as brand_invitations_router,
 )
 from inspire_flow_backend.api.routes.brands import router as brands_router
+from inspire_flow_backend.api.routes.commercial_tasks import (
+    router as commercial_tasks_router,
+)
 from inspire_flow_backend.api.routes.conversations import (
     router as conversations_router,
 )
@@ -41,6 +44,11 @@ api_router.include_router(
     tags=["inspirations"],
 )
 api_router.include_router(projects_router, prefix="/projects", tags=["projects"])
+api_router.include_router(
+    commercial_tasks_router,
+    prefix="/commercial-tasks",
+    tags=["commercial-tasks"],
+)
 api_router.include_router(brands_router, prefix="/brands", tags=["brands"])
 api_router.include_router(
     brand_engagement_router,
