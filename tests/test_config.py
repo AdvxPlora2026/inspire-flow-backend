@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 def test_settings_read_prefixed_environment_variables(monkeypatch):
     monkeypatch.setenv("APP_NAME", "Configured Service")
+    monkeypatch.setenv("APP_VERSION", "test-git-sha")
     monkeypatch.setenv("APP_ENVIRONMENT", "test")
     monkeypatch.setenv("APP_DEBUG", "true")
     monkeypatch.setenv("APP_API_V1_PREFIX", "/custom/v1")
@@ -20,11 +21,24 @@ def test_settings_read_prefixed_environment_variables(monkeypatch):
         settings = config.get_settings()
 
         assert settings.name == "Configured Service"
+        assert settings.version == "test-git-sha"
         assert settings.environment == "test"
         assert settings.debug is True
         assert settings.api_v1_prefix == "/custom/v1"
         assert settings.database_url == "sqlite:///./test.db"
         assert settings.session_ttl_hours == 12
+    finally:
+        config.get_settings.cache_clear()
+
+
+def test_settings_version_defaults_to_dev(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    config = import_module("inspire_flow_backend.core.config")
+    config.get_settings.cache_clear()
+
+    try:
+        assert config.get_settings().version == "dev"
     finally:
         config.get_settings.cache_clear()
 

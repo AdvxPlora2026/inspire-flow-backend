@@ -48,11 +48,22 @@ curl http://127.0.0.1:8000/api/v1/health
 
 ```json
 {
-  "status": "ok",
+  "status": "degraded",
+  "services": {
+    "database": "ok",
+    "model": "not_configured",
+    "injective": "not_configured"
+  },
+  "version": "dev",
   "service": "Inspire Flow Backend",
   "environment": "development"
 }
 ```
+
+The endpoint performs a real database probe without calling the model provider.
+Missing optional model or Injective configuration returns `200` with
+`status: "degraded"`. A database failure returns `503` with the same typed
+response shape and `status: "unavailable"`.
 
 The REST API supports registration, login, creator profiles, encrypted
 long-term memories, durable Agent conversations, and logout. See
@@ -93,6 +104,7 @@ Settings are loaded from environment variables and an optional `.env` file.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `APP_NAME` | `Inspire Flow Backend` | OpenAPI application name and service identity |
+| `APP_VERSION` | `dev` | Deployment version, release identifier, or Git SHA |
 | `APP_ENVIRONMENT` | `development` | Runtime environment label |
 | `APP_DEBUG` | `false` | FastAPI debug mode |
 | `APP_API_V1_PREFIX` | `/api/v1` | Prefix for version 1 endpoints |

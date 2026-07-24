@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     )
 
     name: str = "Inspire Flow Backend"
+    version: str = "dev"
     environment: str = "development"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
