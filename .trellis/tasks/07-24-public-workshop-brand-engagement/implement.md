@@ -18,13 +18,18 @@
 
 ### 2. 通用幂等层
 
-- [ ] 先写 idempotency executor 的失败测试：缺 Header、首次执行、完成重放、
+- [x] 先写 idempotency executor 的失败测试：缺 Header、首次执行、完成重放、
   payload 冲突、并发 processing、24 小时过期、204 与敏感响应加密。
 - [x] 实现请求指纹、key digest、记录仓库、加密响应和错误码。
 - [ ] 把现有已鉴权写 service 的事务改为 executor 统一提交。
-- [ ] 为 JSON、空 body、query/path 和 multipart 文件摘要分别测试指纹。
+- [x] 为 JSON、空 body、query/path 和 multipart 文件摘要分别测试指纹。
 - [x] 增加 OpenAPI 契约测试，扫描全部已鉴权写 operation 是否声明
-  `Idempotency-Key`；明确排除注册、登录、注销。
+  `Idempotency-Key`；注册和登录不鉴权，注销必须声明 Header。
+- [x] 下一版本收紧作用域为用户、方法、规范化实际路径和 key digest；规范化 JSON，
+  将 payload 复用错误改为 `idempotency_key_reused`，并为 processing 冲突增加
+  `retryable: true`。
+- [x] 使用并发商业授权测试证明同一 key 只广播一次链上交易；授权和结算记录保留到
+  任务截止时间后至少 24 小时。
 
 ### 3. 品牌组织和成员
 

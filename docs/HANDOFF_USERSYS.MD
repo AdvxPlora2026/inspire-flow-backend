@@ -240,7 +240,8 @@ DELETE /api/v1/sessions/current
 ```bash
 curl --fail-with-body \
   --request DELETE "$BASE_URL/sessions/current" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $(uuidgen)"
 ```
 
 注销成功返回 `204`，响应体为空。这个操作只撤销当前令牌，同一用户的其他
@@ -267,6 +268,7 @@ unset ACCESS_TOKEN
 
 | HTTP 状态码 | `error.code` | 含义 |
 | --- | --- | --- |
+| `400` | `idempotency_key_required` | 注销缺少有效 `Idempotency-Key` |
 | `401` | `invalid_credentials` | 登录昵称或密码不正确 |
 | `401` | `invalid_session` | 会话缺失、格式错误、过期、未知或已注销 |
 | `409` | `nickname_conflict` | 昵称规范化后已经存在 |
@@ -293,5 +295,6 @@ Bearer 令牌代表当前会话权限。不要把真实令牌放进源码、Git 
 - 已通过 `POST /api/v1/users` 注册账号。
 - 已通过 `POST /api/v1/sessions` 取得 `access_token`。
 - 需要登录的请求都携带 `Authorization: Bearer $ACCESS_TOKEN`。
+- 注销请求还会携带新的 `Idempotency-Key`。
 - 客户端已处理 `401`、`409` 和 `422`。
 - 注销成功后，客户端会删除保存的令牌。

@@ -87,7 +87,8 @@ export IDEMPOTENCY_KEY="$(uuidgen)"
 - JSON 请求使用 `Content-Type: application/json`。
 - 除健康检查和已发布橱窗公开读取外，其余接口都需要
   `Authorization: Bearer <access_token>`。
-- 所有已鉴权业务写请求都必须带 `Idempotency-Key`。注册、登录和注销例外。
+- 所有携带 Bearer Token 的 `POST`、`PUT`、`PATCH`、`DELETE` 都必须带
+  `Idempotency-Key`，包括注销。注册和登录不属于已鉴权请求。
 - ID 使用 UUID 字符串。
 - 时间使用 ISO 8601 格式，一般为 UTC，例如
   `2026-07-24T10:00:00Z`。
@@ -299,7 +300,8 @@ unset ACCOUNT_PASSWORD
 ```bash
 curl --fail-with-body \
   --request DELETE "$API_BASE/sessions/current" \
-  --header "Authorization: Bearer $ACCESS_TOKEN"
+  --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $IDEMPOTENCY_KEY"
 ```
 
 成功返回 `204`，之后继续使用同一凭据会得到 `401 invalid_session`。
@@ -1246,8 +1248,8 @@ curl --fail-with-body "$API_BASE/transcriptions/$JOB_ID" \
 
 ## 11. 写接口幂等
 
-除注册、登录和注销外，所有需要 Bearer 鉴权的 `POST`、`PUT`、`PATCH`、
-`DELETE` 都强制要求：
+所有需要 Bearer 鉴权的 `POST`、`PUT`、`PATCH`、`DELETE`，包括注销，都强制
+要求：
 
 ```text
 Idempotency-Key: <8～128 个 ASCII 字符>
@@ -1259,13 +1261,16 @@ Idempotency-Key: <8～128 个 ASCII 字符>
 2. 超时、断网或没有收到响应时，用原键、原方法、原 URL、原查询参数和原请求体重试。
 3. 用户修改了内容或重新发起操作时生成新键。
 
-同一用户、品牌作用域、路由和键在 24 小时内会重放第一次完成的状态码与响应，
-并增加 `Idempotency-Replayed: true`。同键改了载荷返回
-`409 idempotency_key_conflict`；第一次请求仍在执行时返回
-`409 idempotency_request_in_progress`；缺少键返回
+服务端按当前用户、HTTP 方法、规范化实际路径和键建立唯一作用域。品牌 UUID 已在
+实际路径中，不再单独参与作用域。JSON 与查询参数使用确定性规范化，multipart
+文件按内容摘要，不包含随机 boundary。相同请求会重放第一次完成的状态码与响应，
+并增加 `Idempotency-Replayed: true`。同键改了请求内容返回
+`409 idempotency_key_reused`；第一次请求仍在执行时返回
+`409 idempotency_request_in_progress`，错误体带 `retryable: true`；缺少键返回
 `400 idempotency_key_required`。运行记录超过 Agent 锁超时仍没有结果时返回
 `409 idempotency_outcome_unknown`，客户端应保留本地操作记录并改用新键重试。
-服务端只保存键摘要，缓存响应经过加密。
+服务端只保存键摘要，缓存响应经过加密。普通记录至少保留 24 小时；商业任务授权和
+结算记录至少保留到任务截止时间后 24 小时。
 
 ```bash
 curl --fail-with-body \
@@ -2024,7 +2029,7 @@ curl --fail-with-body "$API_BASE/commercial-tasks/$TASK_ID/proof" \
 | 409 | `brand_last_owner_required` | 操作会移除最后一名 owner |
 | 409 | `brand_invitation_state_conflict` | 邀请已经离开 pending |
 | 409 | `brand_interest_state_conflict` | 意向已经离开 pending |
-| 409 | `idempotency_key_conflict` | 同一幂等键被用于不同请求 |
+| 409 | `idempotency_key_reused` | 同一幂等键被用于不同请求 |
 | 409 | `idempotency_request_in_progress` | 同一幂等请求仍在运行 |
 | 409 | `idempotency_outcome_unknown` | 上一次执行异常中断，结果无法安全重放；改用新键重试 |
 | 422 | `invalid_workshop_contact` | 联系方式格式不合法 |

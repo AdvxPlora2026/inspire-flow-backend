@@ -103,13 +103,22 @@ One active follow row exists per brand and creator and moves between
 terminal states are `accepted`, `declined`, and `withdrawn`. Follow and
 interest changes create or update creator inbox rows and unread state.
 
-Every Bearer-authenticated `POST`, `PUT`, `PATCH`, and `DELETE` requires
-`Idempotency-Key`, except registration, login, and logout. The key is 8 through
-128 ASCII characters. Scope is user, optional path `brand_id`, HTTP method,
-route template, and key digest. The request fingerprint includes method, path,
-query, and body; multipart bodies use normalized form fields plus file byte
-digests. Completed responses are encrypted and replayable for 24 hours with
-`Idempotency-Replayed: true`.
+Every Bearer-authenticated `POST`, `PUT`, `PATCH`, and `DELETE`, including
+logout, requires `Idempotency-Key`. Registration and login are unauthenticated
+and therefore outside this contract. The key is 8 through 128 ASCII
+characters. Scope is authenticated user, HTTP method, normalized concrete
+request path, and key digest. Brand IDs are naturally part of concrete brand
+paths and are not a separate scope dimension. The request fingerprint includes
+method, normalized path, canonical query pairs, and body. JSON bodies are
+parsed and deterministically serialized; multipart bodies use normalized form
+fields plus file byte digests and never include the random boundary. Completed
+responses are encrypted and replay with `Idempotency-Replayed: true`.
+
+Ordinary responses remain replayable for at least 24 hours. Commercial task
+authorization and settlement records remain until at least 24 hours after the
+task deadline. The deployed table still names the concrete-path column
+`route_template` and retains nullable `brand_id` for migration compatibility;
+new records always store `brand_id = NULL`.
 
 SSE event names are:
 
@@ -145,8 +154,8 @@ idempotent replay emits only the cached `turn.started` and terminal event.
 | Invitation or interest is no longer pending | `409 *_state_conflict` |
 | Authenticated business write has no valid key | `400 idempotency_key_required` |
 | Same key and same fingerprint is complete | Replay status, safe headers, and body |
-| Same key has a different fingerprint | `409 idempotency_key_conflict` |
-| Same idempotent operation is still running | `409 idempotency_request_in_progress` |
+| Same key has a different fingerprint | `409 idempotency_key_reused` |
+| Same idempotent operation is still running | `409 idempotency_request_in_progress` with `error.retryable=true` |
 | Processing record exceeds the Agent run-lock TTL | Mark a related turn failed, release its stale lock, and return `409 idempotency_outcome_unknown` |
 | SSE client disconnects | Continue the turn and persist its terminal result |
 
@@ -175,9 +184,11 @@ idempotent replay emits only the cached `turn.started` and terminal event.
 - Engagement: cover follow/unfollow/refollow, one pending interest under
   concurrency, creator transitions, no implicit authorization, inbox
   filtering, and read state.
-- Idempotency: assert missing key, exact replay, conflict, in-progress,
-  empty-204 replay, multipart fingerprinting, 24-hour scope, and OpenAPI header
-  declaration for every authenticated business mutation.
+- Idempotency: assert missing key including logout, canonical JSON replay,
+  concrete-path scope, reused-key rejection, retryable in-progress response,
+  empty-204 replay, multipart fingerprinting, commercial concurrent
+  deduplication, retention, and OpenAPI declaration for every authenticated
+  mutation.
 - Streaming: assert ordered deltas, sanitized tool events, persisted complete
   messages, replay without deltas, and background completion after disconnect.
 

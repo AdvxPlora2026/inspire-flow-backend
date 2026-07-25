@@ -24,6 +24,12 @@ Authorization: Bearer $ACCESS_TOKEN
 Idempotency-Key: <每个写请求生成一个新的唯一值>
 ```
 
+客户端重试同一操作时必须复用原 Key 和原请求内容。服务端按“当前用户 + HTTP 方法 +
+规范化实际路径 + Key”并发去重：相同请求重放原结果，不同内容返回
+`409 idempotency_key_reused`，处理中返回
+`409 idempotency_request_in_progress` 和 `retryable: true`。授权和结算记录至少
+保留到任务截止时间后 24 小时，避免任务周期内因超时重试重复广播链上交易。
+
 注册、登录和注销的完整调用方式见 `docs/HANDOFF_USERSYS.MD`。
 
 ## 2. 前置条件

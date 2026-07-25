@@ -184,8 +184,11 @@ Python 过滤，否则分页总数会失真。
 - `completed_at`
 - `expires_at`
 
-唯一约束覆盖用户、品牌、method、route template 和 key digest。只保存 key 的
-摘要，不保存原始 Header。
+当前数据库结构保留 `brand_id` 和 `route_template` 字段以兼容已部署数据，但新版本
+记录固定写入 `brand_id = NULL`，并让 `route_template` 保存规范化实际路径。现有
+`brand_id IS NULL` 部分唯一索引因此实现 `(user_id, method, normalized_path,
+key_digest)` 唯一作用域。旧品牌作用域记录在原 24 小时保留期后自然清理；后续数据库
+整理版本可移除 `brand_id` 并把字段重命名为 `normalized_path`。
 
 请求指纹包含规范化路径参数、语义查询参数和请求体。JSON 使用确定性序列化；
 multipart 上传把文件字节摘要和其他字段放入指纹，不把音频复制进幂等表。
@@ -270,12 +273,18 @@ multipart 上传把文件字节摘要和其他字段放入指纹，不把音频�
 
 - Header 为 8～128 个可打印 ASCII 字符。
 - 缺少 Header：`400 idempotency_key_required`。
-- 同作用域、同键、不同指纹：`409 idempotency_key_conflict`。
-- 同请求正在执行：`409 idempotency_request_in_progress`。
+- 同作用域、同键、不同指纹：`409 idempotency_key_reused`。
+- 同请求正在执行：`409 idempotency_request_in_progress`，错误体包含
+  `retryable: true`。
 - 完成记录：返回原状态码、允许的响应头和解密后的原响应。
 - 响应加 `Idempotency-Replayed: true` 表示重放。
 
-注册、登录、注销保留当前行为，不要求 Header。
+注册和登录不经过 Bearer 鉴权，因此不要求 Header。注销是 Bearer 鉴权 DELETE，必须
+要求 Header。GET、HEAD、OPTIONS 不要求 Header。
+
+JSON 请求先解析后使用排序键和无冗余空白的确定性 JSON 序列化。查询参数按键值排序。
+multipart 指纹由字段值、文件名、媒体类型、文件大小和文件内容 SHA-256 构成，不包含
+随机 boundary。
 
 ### 5.2 事务
 
@@ -293,6 +302,9 @@ multipart 上传把文件字节摘要和其他字段放入指纹，不把音频�
 - 超时 processing 不自动重新执行副作用，转为安全失败并要求新键。
 
 STT 的幂等结果是同一个 job；Agent 的幂等结果是同一个 turn run。
+
+普通完成记录至少保留 24 小时。商业任务授权和结算在路由完成后把记录保留期延长为
+`max(completed_at + 24h, task.deadline + 24h)`，降低任务周期内重复链上交易风险。
 
 ### 5.3 现有接口改造
 
@@ -348,7 +360,7 @@ data: {"turn_id":"...","delta":"..."}
 - `brand_interest_state_conflict`
 - `creator_inbox_item_not_found`
 - `idempotency_key_required`
-- `idempotency_key_conflict`
+- `idempotency_key_reused`
 - `idempotency_request_in_progress`
 - `idempotency_outcome_unknown`
 

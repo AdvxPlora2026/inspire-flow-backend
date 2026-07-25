@@ -96,8 +96,8 @@ Validation errors may add `error.details`. Each detail contains only
 | Unknown brand interest | `404` | `brand_interest_not_found` | None |
 | Interest state is no longer pending | `409` | `brand_interest_state_conflict` | None |
 | Missing or invalid idempotency key | `400` | `idempotency_key_required` | None |
-| Reused key with different request | `409` | `idempotency_key_conflict` | None |
-| Matching idempotent request is running | `409` | `idempotency_request_in_progress` | None |
+| Reused key with different request | `409` | `idempotency_key_reused` | None |
+| Matching idempotent request is running | `409` | `idempotency_request_in_progress` plus `error.retryable=true` | None |
 | Stale processing request has no replayable result | `409` | `idempotency_outcome_unknown` | None |
 | Other Starlette `HTTPException` | Exception status | `http_error` | Preserve exception headers |
 
