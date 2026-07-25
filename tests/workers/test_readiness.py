@@ -26,13 +26,13 @@ def test_readiness_is_false_until_model_child_reports_success() -> None:
     redis = FakeRedis()
 
     missing = read_stt_readiness(redis, settings)
-    write_stt_readiness(redis, settings, device="mps", process_id=42)
+    write_stt_readiness(redis, settings, device="replicate", process_id=42)
     ready = read_stt_readiness(redis, settings)
 
     assert readiness_key(settings) == "inspireflow:stt:creator-stt:ready"
     assert missing.ready is False
     assert ready.ready is True
-    assert ready.device == "mps"
+    assert ready.device == "replicate"
     assert ready.process_id == 42
     assert redis.expirations[readiness_key(settings)] == 30
     payload = loads(redis.values[readiness_key(settings)])

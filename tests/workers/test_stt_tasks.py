@@ -96,7 +96,7 @@ def make_job(
 
 
 class SuccessfulEngine:
-    device = "cpu"
+    device = "replicate"
 
     def __init__(self) -> None:
         self.calls = 0
@@ -110,13 +110,11 @@ class SuccessfulEngine:
             text="转写后的正文",
             detected_language="zh",
             duration_seconds=2.5,
-            emotions=("happy", "neutral"),
-            audio_events=("speech", "laughter"),
         )
 
 
 class TooLongEngine:
-    device = "cpu"
+    device = "replicate"
 
     def transcribe(self, audio_path: Path, *, language: str, use_itn: bool):
         del audio_path, language, use_itn
@@ -128,7 +126,11 @@ def test_engine_is_loaded_once_and_only_then_reports_readiness(monkeypatch) -> N
     readiness_calls: list[tuple[str, str]] = []
     monkeypatch.setattr(stt_tasks, "_engine", None)
     monkeypatch.setattr(stt_tasks, "_readiness_heartbeat", None)
-    monkeypatch.setattr(stt_tasks, "create_sensevoice_engine", lambda settings: engine)
+    monkeypatch.setattr(
+        stt_tasks,
+        "create_replicate_whisper_engine",
+        lambda settings: engine,
+    )
     monkeypatch.setattr(
         stt_tasks,
         "start_readiness_heartbeat",
@@ -140,7 +142,7 @@ def test_engine_is_loaded_once_and_only_then_reports_readiness(monkeypatch) -> N
 
     assert first is engine
     assert second is engine
-    assert readiness_calls == [("stt", "cpu")]
+    assert readiness_calls == [("stt", "replicate")]
 
 
 def test_worker_ready_enqueues_model_warmup(monkeypatch) -> None:
@@ -197,10 +199,9 @@ def test_task_encrypts_success_and_is_idempotent(
         assert "转写后的正文" not in persisted.transcript_ciphertext
         assert cipher.decrypt_text(persisted.transcript_ciphertext) == "转写后的正文"
         assert persisted.analysis_ciphertext is not None
-        assert "happy" not in persisted.analysis_ciphertext
         assert cipher.decrypt_json(persisted.analysis_ciphertext) == {
-            "audio_events": ["speech", "laughter"],
-            "emotions": ["happy", "neutral"],
+            "audio_events": [],
+            "emotions": [],
             "version": 1,
         }
         assert persisted.detected_language == "zh"

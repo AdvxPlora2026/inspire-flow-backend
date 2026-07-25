@@ -1,9 +1,15 @@
-import os
-import re
+from __future__ import annotations
+
+import math
+import subprocess
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+import httpx
 
 from inspire_flow_backend.core.config import Settings
 from inspire_flow_backend.schemas.transcriptions import (
@@ -12,33 +18,17 @@ from inspire_flow_backend.schemas.transcriptions import (
     TranscriptionLanguage,
 )
 
-_SENSEVOICE_TOKEN = re.compile(r"<\|([^<>]*?)\|>")
-_LANGUAGES = {"en", "ja", "ko", "nospeech", "yue", "zh"}
-_EMOTIONS: dict[str, TranscriptionEmotion] = {
-    "ANGRY": "angry",
-    "DISGUSTED": "disgusted",
-    "FEARFUL": "fearful",
-    "HAPPY": "happy",
-    "NEUTRAL": "neutral",
-    "SAD": "sad",
-    "SURPRISED": "surprised",
+_PROVIDER_LANGUAGES: dict[TranscriptionLanguage, str] = {
+    "auto": "None",
+    "zh": "chinese",
+    "yue": "cantonese",
+    "en": "english",
+    "ja": "japanese",
+    "ko": "korean",
 }
-_AUDIO_EVENTS: dict[str, TranscriptionAudioEvent] = {
-    "Applause": "applause",
-    "BGM": "bgm",
-    "Breath": "breath",
-    "Cough": "cough",
-    "Cry": "cry",
-    "Laughter": "laughter",
-    "Sing": "sing",
-    "Sneeze": "sneeze",
-    "Speech": "speech",
-    "Speech_Noise": "speech_noise",
-}
-
-
-class DeviceUnavailableError(RuntimeError):
-    pass
+_PUBLIC_LANGUAGES = {value: key for key, value in _PROVIDER_LANGUAGES.items() if key != "auto"}
+_ACTIVE_PREDICTION_STATES = {"starting", "processing"}
+_TERMINAL_PREDICTION_STATES = {"succeeded", "failed", "canceled"}
 
 
 class AudioTooLongError(RuntimeError):
@@ -62,40 +52,6 @@ class TranscriptionResult:
     audio_events: tuple[TranscriptionAudioEvent, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class ParsedSenseVoiceOutput:
-    text: str
-    detected_language: str | None
-    emotions: tuple[TranscriptionEmotion, ...]
-    audio_events: tuple[TranscriptionAudioEvent, ...]
-
-
-def parse_sensevoice_output(raw_text: str) -> ParsedSenseVoiceOutput:
-    detected_language = None
-    emotions: list[TranscriptionEmotion] = []
-    audio_events: list[TranscriptionAudioEvent] = []
-
-    for match in _SENSEVOICE_TOKEN.finditer(raw_text):
-        token = match.group(1)
-        if detected_language is None and token in _LANGUAGES:
-            detected_language = token
-        emotion = _EMOTIONS.get(token)
-        if emotion is not None and emotion not in emotions:
-            emotions.append(emotion)
-        audio_event = _AUDIO_EVENTS.get(token)
-        if audio_event is not None and audio_event not in audio_events:
-            audio_events.append(audio_event)
-
-    text = _SENSEVOICE_TOKEN.sub("", raw_text).strip()
-    text = re.sub(r"[ \t]+", " ", text)
-    return ParsedSenseVoiceOutput(
-        text=text,
-        detected_language=detected_language,
-        emotions=tuple(emotions),
-        audio_events=tuple(audio_events),
-    )
-
-
 class SttEngine(Protocol):
     device: str
 
@@ -108,40 +64,27 @@ class SttEngine(Protocol):
     ) -> TranscriptionResult: ...
 
 
-def choose_device(
-    requested: str,
-    *,
-    cuda_available: bool,
-    mps_available: bool,
-) -> str:
-    if requested == "auto":
-        if cuda_available:
-            return "cuda"
-        if mps_available:
-            return "mps"
-        return "cpu"
-    if requested == "cuda" and not cuda_available:
-        raise DeviceUnavailableError("CUDA is not available")
-    if requested == "mps" and not mps_available:
-        raise DeviceUnavailableError("MPS is not available")
-    if requested in {"cpu", "cuda", "mps"}:
-        return requested
-    raise DeviceUnavailableError("Unknown STT device")
+class ReplicateWhisperEngine:
+    device = "replicate"
 
-
-class SenseVoiceEngine:
     def __init__(
         self,
         *,
-        model: object,
-        device: str,
+        client: httpx.Client,
+        model: str,
         max_duration_seconds: int,
-        cpu_model_factory=None,
+        prediction_timeout_seconds: int,
+        poll_interval_seconds: float,
+        sleep: Callable[[float], None] = time.sleep,
+        monotonic: Callable[[], float] | None = None,
     ) -> None:
+        self._client = client
         self._model = model
-        self.device = device
         self._max_duration_seconds = max_duration_seconds
-        self._cpu_model_factory = cpu_model_factory
+        self._prediction_timeout_seconds = prediction_timeout_seconds
+        self._poll_interval_seconds = poll_interval_seconds
+        self._sleep = sleep
+        self._monotonic = monotonic or time.monotonic
 
     def transcribe(
         self,
@@ -150,106 +93,192 @@ class SenseVoiceEngine:
         language: TranscriptionLanguage,
         use_itn: bool,
     ) -> TranscriptionResult:
+        del use_itn
         duration = _audio_duration(audio_path)
         if duration > self._max_duration_seconds:
             raise AudioTooLongError
+
+        remote_file_id: str | None = None
         try:
-            result = self._generate(audio_path, language=language, use_itn=use_itn)
+            remote_file_id, audio_url = self._upload_audio(audio_path)
+            prediction_deadline = self._monotonic() + self._prediction_timeout_seconds
+            prediction = self._create_prediction(audio_url, language=language)
+            prediction = self._wait_for_prediction(
+                prediction,
+                deadline=prediction_deadline,
+            )
+            return self._build_result(
+                prediction,
+                requested_language=language,
+                duration_seconds=duration,
+            )
+        except ModelUnavailableError:
+            raise
         except Exception as exc:
-            if self._cpu_model_factory is None:
-                raise ModelUnavailableError from exc
-            self._model = self._cpu_model_factory()
-            self._cpu_model_factory = None
-            self.device = "cpu"
-            try:
-                result = self._generate(audio_path, language=language, use_itn=use_itn)
-            except Exception as fallback_exc:
-                raise ModelUnavailableError from fallback_exc
+            raise ModelUnavailableError from exc
+        finally:
+            if remote_file_id is not None:
+                self._delete_remote_file(remote_file_id)
 
-        if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+    def _upload_audio(self, audio_path: Path) -> tuple[str, str]:
+        with audio_path.open("rb") as audio_file:
+            response = self._client.post(
+                "files",
+                files={
+                    "content": (
+                        "audio",
+                        audio_file,
+                        "application/octet-stream",
+                    )
+                },
+            )
+        payload = _response_json(response)
+        remote_file_id = payload.get("id")
+        urls = payload.get("urls")
+        if not isinstance(remote_file_id, str) or not remote_file_id:
             raise ModelUnavailableError
-        raw_text = result[0].get("text")
-        if not isinstance(raw_text, str):
+        if not isinstance(urls, dict):
             raise ModelUnavailableError
-        parsed = parse_sensevoice_output(raw_text)
-        detected_language = result[0].get("language") or parsed.detected_language
-        return TranscriptionResult(
-            text=parsed.text,
-            detected_language=(str(detected_language) if detected_language is not None else None),
-            duration_seconds=duration,
-            emotions=parsed.emotions,
-            audio_events=parsed.audio_events,
-        )
+        audio_url = urls.get("get")
+        if not isinstance(audio_url, str) or not audio_url.startswith("https://"):
+            raise ModelUnavailableError
+        return remote_file_id, audio_url
 
-    def _generate(
+    def _create_prediction(
         self,
-        audio_path: Path,
+        audio_url: str,
         *,
         language: TranscriptionLanguage,
-        use_itn: bool,
-    ):
-        return self._model.generate(
-            input=str(audio_path),
-            cache={},
-            language=language,
-            use_itn=use_itn,
-            batch_size_s=60,
-            merge_vad=True,
-            merge_length_s=15,
+    ) -> dict[str, Any]:
+        response = self._client.post(
+            "predictions",
+            headers={
+                "Prefer": "wait=60",
+                "Cancel-After": f"{self._prediction_timeout_seconds}s",
+            },
+            json={
+                "version": self._model,
+                "input": {
+                    "audio": audio_url,
+                    "task": "transcribe",
+                    "language": _PROVIDER_LANGUAGES[language],
+                    "batch_size": 24,
+                    "timestamp": "chunk",
+                    "diarise_audio": False,
+                },
+            },
+        )
+        return _response_json(response)
+
+    def _wait_for_prediction(
+        self,
+        prediction: dict[str, Any],
+        *,
+        deadline: float,
+    ) -> dict[str, Any]:
+        prediction_id = prediction.get("id")
+        status = prediction.get("status")
+        if not isinstance(prediction_id, str) or not prediction_id:
+            raise ModelUnavailableError
+        if status in _TERMINAL_PREDICTION_STATES:
+            return prediction
+        if status not in _ACTIVE_PREDICTION_STATES:
+            raise ModelUnavailableError
+
+        while status in _ACTIVE_PREDICTION_STATES:
+            if self._monotonic() >= deadline:
+                self._cancel_prediction(prediction_id)
+                raise ModelUnavailableError
+            self._sleep(self._poll_interval_seconds)
+            response = self._client.get(f"predictions/{prediction_id}")
+            prediction = _response_json(response)
+            status = prediction.get("status")
+            if status not in _ACTIVE_PREDICTION_STATES | _TERMINAL_PREDICTION_STATES:
+                raise ModelUnavailableError
+        return prediction
+
+    def _build_result(
+        self,
+        prediction: dict[str, Any],
+        *,
+        requested_language: TranscriptionLanguage,
+        duration_seconds: float,
+    ) -> TranscriptionResult:
+        if prediction.get("status") != "succeeded":
+            raise ModelUnavailableError
+        output = prediction.get("output")
+        if not isinstance(output, dict):
+            raise ModelUnavailableError
+        text = output.get("text")
+        if not isinstance(text, str):
+            raise ModelUnavailableError
+
+        provider_language = output.get("detected_language") or output.get("language")
+        detected_language = _normalize_detected_language(provider_language)
+        if detected_language is None and requested_language != "auto":
+            detected_language = requested_language
+        return TranscriptionResult(
+            text=text.strip(),
+            detected_language=detected_language,
+            duration_seconds=duration_seconds,
         )
 
-
-def create_sensevoice_engine(settings: Settings) -> SenseVoiceEngine:
-    torch = import_module("torch")
-    cuda_available = bool(torch.cuda.is_available())
-    mps_available = bool(torch.backends.mps.is_available())
-    device = choose_device(
-        settings.stt_device,
-        cuda_available=cuda_available,
-        mps_available=mps_available,
-    )
-
-    os.environ.setdefault("HF_HOME", str(settings.stt_model_cache_dir))
-    os.environ.setdefault("MODELSCOPE_CACHE", str(settings.stt_model_cache_dir))
-    os.environ["HF_HUB_DISABLE_XET"] = "1" if settings.stt_hf_disable_xet else "0"
-    funasr = import_module("funasr")
-    auto_model = funasr.AutoModel
-
-    def build_model(target_device: str):
-        return auto_model(
-            model=settings.stt_model,
-            hub=settings.stt_model_hub,
-            vad_model="fsmn-vad",
-            vad_kwargs={"max_single_segment_time": 30_000},
-            device=target_device,
-            disable_update=True,
-        )
-
-    cpu_model_factory = None
-    try:
-        model = build_model(device)
-    except Exception as exc:
-        if settings.stt_device != "auto" or device == "cpu":
-            raise ModelUnavailableError from exc
-        device = "cpu"
+    def _cancel_prediction(self, prediction_id: str) -> None:
         try:
-            model = build_model(device)
-        except Exception as fallback_exc:
-            raise ModelUnavailableError from fallback_exc
-    else:
-        if settings.stt_device == "auto" and device != "cpu":
+            response = self._client.post(f"predictions/{prediction_id}/cancel")
+            response.raise_for_status()
+        except Exception:
+            return
 
-            def build_cpu_model():
-                return build_model("cpu")
+    def _delete_remote_file(self, remote_file_id: str) -> None:
+        try:
+            response = self._client.delete(f"files/{remote_file_id}")
+            response.raise_for_status()
+        except Exception:
+            return
 
-            cpu_model_factory = build_cpu_model
 
-    return SenseVoiceEngine(
-        model=model,
-        device=device,
-        max_duration_seconds=settings.stt_max_duration_seconds,
-        cpu_model_factory=cpu_model_factory,
+def create_replicate_whisper_engine(settings: Settings) -> ReplicateWhisperEngine:
+    if settings.stt_api_key is None:
+        raise ModelUnavailableError
+    api_key = settings.stt_api_key.get_secret_value()
+    if not api_key:
+        raise ModelUnavailableError
+
+    client = httpx.Client(
+        base_url=f"{str(settings.stt_base_url).rstrip('/')}/",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=settings.stt_request_timeout_seconds,
     )
+    return ReplicateWhisperEngine(
+        client=client,
+        model=settings.stt_model,
+        max_duration_seconds=settings.stt_max_duration_seconds,
+        prediction_timeout_seconds=settings.stt_prediction_timeout_seconds,
+        poll_interval_seconds=settings.stt_poll_interval_seconds,
+    )
+
+
+def _response_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        raise ModelUnavailableError from exc
+    if not isinstance(payload, dict):
+        raise ModelUnavailableError
+    return payload
+
+
+def _normalize_detected_language(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in _PUBLIC_LANGUAGES:
+        return _PUBLIC_LANGUAGES[normalized]
+    if normalized in _PROVIDER_LANGUAGES and normalized != "auto":
+        return normalized
+    return None
 
 
 def _audio_duration(audio_path: Path) -> float:
@@ -262,11 +291,30 @@ def _audio_duration(audio_path: Path) -> float:
             raise ValueError
         return frames / sample_rate
     except Exception:
-        try:
-            librosa = import_module("librosa")
-            duration = float(librosa.get_duration(path=str(audio_path)))
-            if duration < 0:
-                raise ValueError
-            return duration
-        except Exception as exc:
-            raise InvalidAudioError from exc
+        pass
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(audio_path),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            raise ValueError
+        duration = float(result.stdout.strip())
+        if duration < 0 or not math.isfinite(duration):
+            raise ValueError
+        return duration
+    except Exception as exc:
+        raise InvalidAudioError from exc

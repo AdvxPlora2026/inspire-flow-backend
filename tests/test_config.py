@@ -120,11 +120,15 @@ def test_stt_settings_have_isolated_bounded_defaults(monkeypatch, tmp_path: Path
         assert settings.stt_broker_url == "redis://127.0.0.1:6379/0"
         assert settings.stt_queue == "stt"
         assert settings.stt_spool_dir == Path(".inspireflow-stt-spool")
-        assert settings.stt_model_cache_dir == Path(".inspireflow-models")
-        assert settings.stt_model == "FunAudioLLM/SenseVoiceSmall"
-        assert settings.stt_model_hub == "hf"
-        assert settings.stt_hf_disable_xet is True
-        assert settings.stt_device == "auto"
+        assert settings.stt_api_key is None
+        assert str(settings.stt_base_url) == ("https://ai.hackclub.com/proxy/v1/replicate")
+        assert settings.stt_model == (
+            "vaibhavs10/incredibly-fast-whisper:"
+            "3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c"
+        )
+        assert settings.stt_request_timeout_seconds == 70
+        assert settings.stt_prediction_timeout_seconds == 540
+        assert settings.stt_poll_interval_seconds == 1.0
         assert settings.stt_max_upload_mib == 64
         assert settings.stt_max_duration_seconds == 300
         assert settings.stt_soft_time_limit_seconds == 600
@@ -135,19 +139,20 @@ def test_stt_settings_have_isolated_bounded_defaults(monkeypatch, tmp_path: Path
         config.get_settings.cache_clear()
 
 
-def test_stt_device_accepts_supported_values(monkeypatch) -> None:
+def test_blank_stt_api_key_is_treated_as_unconfigured(monkeypatch) -> None:
+    monkeypatch.setenv("APP_STT_API_KEY", "  ")
     config = import_module("inspire_flow_backend.core.config")
-
-    for device in ("auto", "cpu", "cuda", "mps"):
-        monkeypatch.setenv("APP_STT_DEVICE", device)
-        config.get_settings.cache_clear()
-        assert config.get_settings().stt_device == device
-
     config.get_settings.cache_clear()
 
+    try:
+        assert config.get_settings().stt_api_key is None
+    finally:
+        config.get_settings.cache_clear()
 
-def test_stt_device_rejects_unknown_value(monkeypatch) -> None:
-    monkeypatch.setenv("APP_STT_DEVICE", "metal")
+
+def test_stt_hard_limit_must_exceed_soft_limit(monkeypatch) -> None:
+    monkeypatch.setenv("APP_STT_SOFT_TIME_LIMIT_SECONDS", "600")
+    monkeypatch.setenv("APP_STT_HARD_TIME_LIMIT_SECONDS", "600")
     config = import_module("inspire_flow_backend.core.config")
     config.get_settings.cache_clear()
 
@@ -158,9 +163,9 @@ def test_stt_device_rejects_unknown_value(monkeypatch) -> None:
         config.get_settings.cache_clear()
 
 
-def test_stt_hard_limit_must_exceed_soft_limit(monkeypatch) -> None:
+def test_stt_prediction_timeout_must_be_below_soft_limit(monkeypatch) -> None:
+    monkeypatch.setenv("APP_STT_PREDICTION_TIMEOUT_SECONDS", "600")
     monkeypatch.setenv("APP_STT_SOFT_TIME_LIMIT_SECONDS", "600")
-    monkeypatch.setenv("APP_STT_HARD_TIME_LIMIT_SECONDS", "600")
     config = import_module("inspire_flow_backend.core.config")
     config.get_settings.cache_clear()
 

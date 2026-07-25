@@ -21,11 +21,10 @@ from inspire_flow_backend.workers.readiness import (
 )
 from inspire_flow_backend.workers.stt_engine import (
     AudioTooLongError,
-    DeviceUnavailableError,
     InvalidAudioError,
     ModelUnavailableError,
     SttEngine,
-    create_sensevoice_engine,
+    create_replicate_whisper_engine,
 )
 
 _engine: SttEngine | None = None
@@ -38,7 +37,7 @@ def get_engine() -> SttEngine:
     global _engine, _readiness_heartbeat
     if _engine is None:
         settings = get_settings()
-        _engine = create_sensevoice_engine(settings)
+        _engine = create_replicate_whisper_engine(settings)
         _readiness_heartbeat = start_readiness_heartbeat(settings, _engine.device)
     return _engine
 
@@ -90,7 +89,7 @@ def run_transcription_job(
         error_code = "audio_too_long"
     except InvalidAudioError:
         error_code = "invalid_audio"
-    except (DeviceUnavailableError, ModelUnavailableError):
+    except ModelUnavailableError:
         error_code = "stt_model_unavailable"
     else:
         with session_factory() as db:

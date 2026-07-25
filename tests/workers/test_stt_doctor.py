@@ -25,7 +25,7 @@ def test_doctor_distinguishes_worker_liveness_from_model_readiness() -> None:
         worker_ping=lambda: True,
         readiness_client=redis,
     )
-    write_stt_readiness(redis, settings, device="cpu", process_id=73)
+    write_stt_readiness(redis, settings, device="replicate", process_id=73)
     ready = build_doctor_report(
         settings,
         broker_ping=lambda: True,
@@ -39,7 +39,7 @@ def test_doctor_distinguishes_worker_liveness_from_model_readiness() -> None:
     assert warming.model == "not_ready"
     assert ready.status == "ready"
     assert ready.model == "ready"
-    assert ready.device == "cpu"
+    assert ready.device == "replicate"
     assert ready.process_id == 73
 
 

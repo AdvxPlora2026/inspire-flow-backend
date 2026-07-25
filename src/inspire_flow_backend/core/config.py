@@ -40,11 +40,18 @@ class Settings(BaseSettings):
     stt_broker_url: str = "redis://127.0.0.1:6379/0"
     stt_queue: str = Field(default="stt", min_length=1)
     stt_spool_dir: Path = Path(".inspireflow-stt-spool")
-    stt_model_cache_dir: Path = Path(".inspireflow-models")
-    stt_model: str = Field(default="FunAudioLLM/SenseVoiceSmall", min_length=1)
-    stt_model_hub: Literal["hf", "ms"] = "hf"
-    stt_hf_disable_xet: bool = True
-    stt_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    stt_api_key: SecretStr | None = None
+    stt_base_url: AnyHttpUrl = AnyHttpUrl("https://ai.hackclub.com/proxy/v1/replicate")
+    stt_model: str = Field(
+        default=(
+            "vaibhavs10/incredibly-fast-whisper:"
+            "3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c"
+        ),
+        min_length=1,
+    )
+    stt_request_timeout_seconds: int = Field(default=70, gt=0)
+    stt_prediction_timeout_seconds: int = Field(default=540, gt=0)
+    stt_poll_interval_seconds: float = Field(default=1.0, gt=0)
     stt_max_upload_mib: int = Field(default=64, gt=0)
     stt_max_duration_seconds: int = Field(default=300, gt=0)
     stt_soft_time_limit_seconds: int = Field(default=600, gt=0)
@@ -63,6 +70,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "context_encryption_key",
+        "stt_api_key",
         "injective_private_key",
         "injective_rpc_url",
         "injective_explorer_base_url",
@@ -83,6 +91,8 @@ class Settings(BaseSettings):
             raise ValueError("summary and memory budgets cannot exceed the hard context budget")
         if self.stt_hard_time_limit_seconds <= self.stt_soft_time_limit_seconds:
             raise ValueError("STT hard time limit must exceed the soft time limit")
+        if self.stt_prediction_timeout_seconds >= self.stt_soft_time_limit_seconds:
+            raise ValueError("STT prediction timeout must be below the soft time limit")
         return self
 
 
