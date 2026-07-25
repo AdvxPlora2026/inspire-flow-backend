@@ -17,6 +17,7 @@ from inspire_flow_backend.api.dependencies import (
 )
 from inspire_flow_backend.core.config import Settings
 from inspire_flow_backend.core.context_security import ContextCipher
+from inspire_flow_backend.core.time import utc_now
 from inspire_flow_backend.data.base import Base
 from inspire_flow_backend.data.database import (
     create_database_engine,
@@ -33,8 +34,13 @@ from inspire_flow_backend.data.models.user import User
 from inspire_flow_backend.data.models.user_memory import UserMemory
 from inspire_flow_backend.data.models.user_profile import UserProfile
 from inspire_flow_backend.main import create_app
+from inspire_flow_backend.schemas.advisory import (
+    BrandAdvisoryContext,
+    BrandAdvisoryDraft,
+)
 from inspire_flow_backend.schemas.memories import MemoryCategory
 from inspire_flow_backend.schemas.projects import ProjectDraft
+from inspire_flow_backend.services.agent.brand_advisor import finalize_advisory_report
 from inspire_flow_backend.services.agent.memory_extraction import (
     AcceptedMemoryCandidate,
     MemoryExtractionResult,
@@ -250,6 +256,27 @@ class FakeApiProjectDraftGenerator:
         )
 
 
+class FakeApiBrandAdvisor:
+    def __init__(self) -> None:
+        self.fail_next = False
+        self.contexts: list[BrandAdvisoryContext] = []
+
+    async def analyze(self, context: BrandAdvisoryContext):
+        self.contexts.append(context)
+        if self.fail_next:
+            self.fail_next = False
+            raise ModelBehaviorError("fake advisory failure")
+        return finalize_advisory_report(
+            context=context,
+            draft=BrandAdvisoryDraft(
+                caveats=["测试环境没有外部热点数据"],
+                next_research_steps=["连接受限公开搜索工具后重试"],
+            ),
+            run_items=[],
+            generated_at=utc_now(),
+        )
+
+
 @pytest.fixture
 def context_cipher(tmp_path: Path) -> ContextCipher:
     return ContextCipher.from_settings(
@@ -268,6 +295,7 @@ def fake_agent_runtime() -> AgentRuntime:
         compactor=FakeApiCompactor(),
         memory_extractor=FakeApiMemoryExtractor(),
         project_draft_generator=FakeApiProjectDraftGenerator(),
+        brand_advisor=FakeApiBrandAdvisor(),
     )
 
 

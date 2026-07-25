@@ -68,6 +68,7 @@ class FetchResponse(BaseModel):
     title: str | None = None
     text: str
     truncated: bool
+    published_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+import httpx
 from agents import (
     Agent,
     Model,
@@ -22,11 +23,16 @@ from inspire_flow_backend.services.agent.agent import (
     OpenAIAgentRunner,
     create_agent_service,
 )
+from inspire_flow_backend.services.agent.brand_advisor import BrandAdvisor, ModelBrandAdvisor
 from inspire_flow_backend.services.agent.compaction import (
     ContextCompactor,
     ModelContextCompactor,
 )
-from inspire_flow_backend.services.agent.contracts import AgentRunContext, TextGenerator
+from inspire_flow_backend.services.agent.contracts import (
+    AgentRunContext,
+    AgentToolSettings,
+    TextGenerator,
+)
 from inspire_flow_backend.services.agent.memory_extraction import (
     MemoryExtractor,
     ModelMemoryExtractor,
@@ -105,6 +111,8 @@ class AgentRuntime:
     compactor: ContextCompactor
     memory_extractor: MemoryExtractor
     project_draft_generator: ProjectDraftGenerator
+    brand_advisor: BrandAdvisor | None = None
+    _http_client: httpx.AsyncClient | None = field(default=None, repr=False)
     _model_client: AsyncOpenAI | None = field(default=None, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
 
@@ -115,8 +123,12 @@ class AgentRuntime:
         try:
             await self.conversation_agent.aclose()
         finally:
-            if self._model_client is not None:
-                await self._model_client.close()
+            try:
+                if self._http_client is not None:
+                    await self._http_client.aclose()
+            finally:
+                if self._model_client is not None:
+                    await self._model_client.close()
 
 
 def create_agent_runtime(
@@ -141,7 +153,24 @@ def create_agent_runtime(
         model=configured.name,
         openai_client=client,
     )
-    conversation_agent: AgentService = create_agent_service(model=model)
+    tool_settings = AgentToolSettings()
+    outbound_client = httpx.AsyncClient(
+        timeout=tool_settings.request_timeout_seconds,
+        follow_redirects=False,
+        trust_env=False,
+        headers={"User-Agent": tool_settings.user_agent},
+    )
+    brand_advisor = ModelBrandAdvisor(
+        model=model,
+        http_client=outbound_client,
+        settings=tool_settings,
+    )
+    conversation_agent: AgentService = create_agent_service(
+        model=model,
+        tool_settings=tool_settings,
+        http_client=outbound_client,
+        brand_advisor=brand_advisor,
+    )
     compaction_generator = AgentTextGenerator(
         name="InspireFlowContextCompactor",
         instructions=("你只负责把创作对话压缩为忠实、简洁的中文摘要，不添加新事实。"),
@@ -157,5 +186,7 @@ def create_agent_runtime(
         compactor=ModelContextCompactor(compaction_generator),
         memory_extractor=ModelMemoryExtractor(extraction_generator),
         project_draft_generator=ModelProjectDraftGenerator(model=model),
+        brand_advisor=brand_advisor,
+        _http_client=outbound_client,
         _model_client=client,
     )

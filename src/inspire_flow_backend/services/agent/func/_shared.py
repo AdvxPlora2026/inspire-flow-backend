@@ -96,6 +96,37 @@ def invalid_user_profile_text_error_json() -> str:
     )
 
 
+def brand_context_error_json() -> str:
+    return error_json(
+        AgentToolError(
+            "brand_context_unavailable",
+            "Authenticated brand context is unavailable",
+        )
+    )
+
+
+def brand_not_found_error_json() -> str:
+    return error_json(AgentToolError("brand_not_found", "Brand not found"))
+
+
+def invalid_advisory_request_error_json() -> str:
+    return error_json(
+        AgentToolError(
+            "invalid_advisory_request",
+            "Brand advisory request is invalid",
+        )
+    )
+
+
+def advisory_unavailable_error_json() -> str:
+    return error_json(
+        AgentToolError(
+            "advisory_unavailable",
+            "Brand advisory service is unavailable",
+        )
+    )
+
+
 def error_json(error: AgentToolError) -> str:
     return ToolErrorResult(
         error=ToolErrorBody(

@@ -1,6 +1,8 @@
 import asyncio
 import ipaddress
+import json
 import socket
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -143,7 +145,7 @@ class WebPageFetcher:
             except httpx.HTTPError as error:
                 raise _fetch_unavailable() from error
 
-            text, title = _extract_text(body, content_type, encoding)
+            text, title, published_at = _extract_text(body, content_type, encoding)
             truncated = len(text) > self._settings.max_fetch_output_characters
             if truncated:
                 text = text[: self._settings.max_fetch_output_characters]
@@ -153,6 +155,7 @@ class WebPageFetcher:
                 title=title,
                 text=text,
                 truncated=truncated,
+                published_at=published_at,
             )
 
 
@@ -199,19 +202,21 @@ def _extract_text(
     body: bytes,
     content_type: str,
     encoding: str,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, datetime | None]:
     try:
         decoded = body.decode(encoding, errors="replace")
     except LookupError:
         decoded = body.decode("utf-8", errors="replace")
     if content_type not in _HTML_CONTENT_TYPES:
-        return decoded.strip(), None
+        return decoded.strip(), None, None
 
     parser = _ReadableHtmlParser()
     parser.feed(decoded)
     parser.close()
-    return _normalize_text("".join(parser.text_parts)), _optional_normalized_text(
-        "".join(parser.title_parts)
+    return (
+        _normalize_text("".join(parser.text_parts)),
+        _optional_normalized_text("".join(parser.title_parts)),
+        _verified_publication_time(parser.publication_candidates),
     )
 
 
@@ -245,8 +250,11 @@ class _ReadableHtmlParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.text_parts: list[str] = []
         self.title_parts: list[str] = []
+        self.publication_candidates: list[str] = []
         self._blocked_depth = 0
         self._head_depth = 0
+        self._json_ld_depth = 0
+        self._json_ld_parts: list[str] = []
         self._title_depth = 0
 
     def handle_starttag(
@@ -254,7 +262,19 @@ class _ReadableHtmlParser(HTMLParser):
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        del attrs
+        attributes = {name.casefold(): value for name, value in attrs}
+        if tag == "meta":
+            metadata_name = (attributes.get("property") or attributes.get("name") or "").casefold()
+            content = attributes.get("content")
+            if metadata_name == "article:published_time" and content:
+                self.publication_candidates.append(content)
+        elif tag == "time":
+            datetime_value = attributes.get("datetime")
+            if datetime_value:
+                self.publication_candidates.append(datetime_value)
+        elif tag == "script" and (attributes.get("type") or "").casefold() == "application/ld+json":
+            self._json_ld_depth += 1
+            return
         if tag in self._BLOCKED_TAGS:
             self._blocked_depth += 1
             return
@@ -276,6 +296,14 @@ class _ReadableHtmlParser(HTMLParser):
         self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self._json_ld_depth:
+            self._json_ld_depth -= 1
+            if not self._json_ld_depth:
+                self.publication_candidates.extend(
+                    _json_ld_publication_candidates("".join(self._json_ld_parts))
+                )
+                self._json_ld_parts.clear()
+            return
         if tag in self._BLOCKED_TAGS:
             if self._blocked_depth:
                 self._blocked_depth -= 1
@@ -290,6 +318,9 @@ class _ReadableHtmlParser(HTMLParser):
             self.text_parts.append(" ")
 
     def handle_data(self, data: str) -> None:
+        if self._json_ld_depth:
+            self._json_ld_parts.append(data)
+            return
         if self._blocked_depth:
             return
         if self._title_depth:
@@ -305,6 +336,43 @@ def _normalize_text(value: str) -> str:
 def _optional_normalized_text(value: str) -> str | None:
     normalized = _normalize_text(value)
     return normalized or None
+
+
+def _json_ld_publication_candidates(document: str) -> list[str]:
+    try:
+        value = json.loads(document)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    candidates: list[str] = []
+
+    def visit(node: object) -> None:
+        if isinstance(node, dict):
+            published = node.get("datePublished")
+            if isinstance(published, str):
+                candidates.append(published)
+            for child in node.values():
+                visit(child)
+        elif isinstance(node, list):
+            for child in node:
+                visit(child)
+
+    visit(value)
+    return candidates
+
+
+def _verified_publication_time(candidates: list[str]) -> datetime | None:
+    parsed: set[datetime] = set()
+    for candidate in candidates:
+        try:
+            value = datetime.fromisoformat(candidate.strip().replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if value.tzinfo is None or value.utcoffset() is None:
+            continue
+        parsed.add(value.astimezone(UTC))
+    if len(parsed) != 1:
+        return None
+    return next(iter(parsed))
 
 
 def _invalid_url() -> AgentToolError:

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from inspire_flow_backend.api.routes.advisory import router as advisory_router
 from inspire_flow_backend.api.routes.brands import (
     invitation_router as brand_invitations_router,
 )
@@ -50,6 +51,7 @@ api_router.include_router(
     tags=["commercial-tasks"],
 )
 api_router.include_router(brands_router, prefix="/brands", tags=["brands"])
+api_router.include_router(advisory_router, prefix="/brands", tags=["brand-advisory"])
 api_router.include_router(
     brand_engagement_router,
     prefix="/brands",

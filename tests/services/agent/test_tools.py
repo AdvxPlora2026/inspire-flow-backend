@@ -17,9 +17,17 @@ from inspire_flow_backend.data.database import create_database_engine
 from inspire_flow_backend.data.model_registry import register_models
 from inspire_flow_backend.data.models.agent_conversation import AgentConversation
 from inspire_flow_backend.data.models.agent_message import AgentMessage
+from inspire_flow_backend.data.models.brand import BrandMembership
 from inspire_flow_backend.data.models.inspiration import Inspiration
 from inspire_flow_backend.data.models.project import Project
 from inspire_flow_backend.data.models.user import User
+from inspire_flow_backend.schemas.advisory import (
+    BrandAdvisoryContext,
+    BrandAdvisoryDraft,
+)
+from inspire_flow_backend.schemas.brands import BrandCreate
+from inspire_flow_backend.services import brands as brand_service
+from inspire_flow_backend.services.agent.brand_advisor import finalize_advisory_report
 from inspire_flow_backend.services.agent.contracts import (
     AgentRunContext,
     AgentToolError,
@@ -37,7 +45,7 @@ def fixed_clock() -> datetime:
     return FIXED_NOW
 
 
-def build_tools():
+def build_tools(brand_advisor=None):
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(
             lambda request: httpx.Response(500, request=request),
@@ -48,6 +56,7 @@ def build_tools():
         settings=AgentToolSettings(),
         clock=fixed_clock,
         resolver=None,
+        brand_advisor=brand_advisor,
     )
     return client, tools
 
@@ -109,6 +118,12 @@ def test_agent_functions_are_defined_under_func_package() -> None:
         ],
         "inspire_flow_backend.services.agent.func.update_user_profile_text": [
             "build_update_user_profile_text_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.list_brands": [
+            "build_list_brands_tool",
+        ],
+        "inspire_flow_backend.services.agent.func.analyze_brand_project": [
+            "build_analyze_brand_project_tool",
         ],
         "inspire_flow_backend.services.agent.func.registry": [
             "build_agent_tools",
@@ -210,6 +225,142 @@ def test_current_datetime_function_tool_has_stable_schema_and_output() -> None:
             "iso_datetime": "2026-07-23T18:30:00+08:00",
             "unix_timestamp": int(FIXED_NOW.timestamp()),
         }
+    finally:
+        asyncio.run(client.aclose())
+
+
+class FakeBrandAdvisor:
+    def __init__(self) -> None:
+        self.contexts: list[BrandAdvisoryContext] = []
+
+    async def analyze(self, context: BrandAdvisoryContext):
+        self.contexts.append(context)
+        return finalize_advisory_report(
+            context=context,
+            draft=BrandAdvisoryDraft(
+                caveats=["测试证据不足"],
+                next_research_steps=["补充公开来源"],
+            ),
+            run_items=[],
+            generated_at=FIXED_NOW,
+        )
+
+
+def test_brand_tools_are_appended_with_stable_schemas_and_hidden_owner_context() -> None:
+    client, tools = build_tools(FakeBrandAdvisor())
+
+    try:
+        assert [tool.name for tool in tools[-2:]] == [
+            "list_brands",
+            "analyze_brand_project",
+        ]
+        list_schema = tools[-2].params_json_schema["properties"]
+        assert list_schema["limit"]["default"] == 50
+        assert list_schema["offset"]["default"] == 0
+        analyze_schema = tools[-1].params_json_schema["properties"]
+        assert analyze_schema["market"]["default"] == "China mainland"
+        assert analyze_schema["lookback_days"]["default"] == 7
+        assert "project_brief" in analyze_schema
+        for schema in (list_schema, analyze_schema):
+            assert "user_id" not in schema
+            assert "ctx" not in schema
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_brand_tools_list_only_memberships_and_delegate_advisory() -> None:
+    register_models()
+    engine = create_database_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    advisor = FakeBrandAdvisor()
+    client, tools = build_tools(advisor)
+    try:
+        with factory() as db:
+            owner = add_user(db, "brand-tool-owner")
+            member = add_user(db, "brand-tool-member")
+            outsider = add_user(db, "brand-tool-outsider")
+            first = brand_service.create_brand(
+                db,
+                owner.id,
+                BrandCreate(name="第一品牌"),
+            )
+            second = brand_service.create_brand(
+                db,
+                outsider.id,
+                BrandCreate(name="第二品牌"),
+            )
+            db.add(BrandMembership(brand_id=first.id, user_id=member.id, role="member"))
+            db.commit()
+            tools_by_name = {tool.name: tool for tool in tools}
+
+            listed = invoke_project_tool(
+                tools_by_name["list_brands"],
+                {},
+                AgentRunContext(db=db, user_id=member.id),
+            )
+            assert listed["ok"] is True
+            assert listed["total"] == 1
+            assert [brand["id"] for brand in listed["brands"]] == [str(first.id)]
+            assert str(second.id) not in json.dumps(listed)
+
+            analyzed = invoke_project_tool(
+                tools_by_name["analyze_brand_project"],
+                {
+                    "brand_id": str(first.id),
+                    "project_brief": "  为冷萃新品分析近期热点  ",
+                    "market": "中国大陆",
+                    "focus_topics": ["职场效率"],
+                },
+                AgentRunContext(db=db, user_id=member.id),
+            )
+            assert analyzed["ok"] is True
+            assert analyzed["report"]["brand"]["id"] == str(first.id)
+            assert analyzed["report"]["evidence_status"] == "insufficient"
+            assert advisor.contexts[-1].project.brief == "为冷萃新品分析近期热点"
+    finally:
+        asyncio.run(client.aclose())
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_brand_tools_return_safe_expected_errors() -> None:
+    client, tools = build_tools()
+    try:
+        tools_by_name = {tool.name: tool for tool in tools}
+        missing_context = invoke_project_tool(tools_by_name["list_brands"], {}, None)
+        assert missing_context["error"]["code"] == "brand_context_unavailable"
+
+        unavailable = invoke_project_tool(
+            tools_by_name["analyze_brand_project"],
+            {"brand_id": str(uuid4()), "project_brief": "brief"},
+            None,
+        )
+        assert unavailable["error"]["code"] == "brand_context_unavailable"
+
+        register_models()
+        engine = create_database_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine, expire_on_commit=False)
+        try:
+            with factory() as db:
+                user = add_user(db, "brand-tool-errors")
+                context = AgentRunContext(db=db, user_id=user.id)
+                invalid = invoke_project_tool(
+                    tools_by_name["analyze_brand_project"],
+                    {"brand_id": str(uuid4()), "project_brief": " ", "lookback_days": 31},
+                    context,
+                )
+                assert invalid["error"]["code"] == "invalid_advisory_request"
+                no_advisor = invoke_project_tool(
+                    tools_by_name["analyze_brand_project"],
+                    {"brand_id": str(uuid4()), "project_brief": "brief"},
+                    context,
+                )
+                assert no_advisor["error"]["code"] == "advisory_unavailable"
+        finally:
+            Base.metadata.drop_all(engine)
+            engine.dispose()
     finally:
         asyncio.run(client.aclose())
 

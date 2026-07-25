@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import httpx
 from agents import FunctionTool
 
@@ -8,6 +12,9 @@ from inspire_flow_backend.services.agent.contracts import (
 )
 from inspire_flow_backend.services.agent.func.add_inspiration_project import (
     build_add_inspiration_project_tool,
+)
+from inspire_flow_backend.services.agent.func.analyze_brand_project import (
+    build_analyze_brand_project_tool,
 )
 from inspire_flow_backend.services.agent.func.create_inspiration import (
     build_create_inspiration_tool,
@@ -33,6 +40,7 @@ from inspire_flow_backend.services.agent.func.get_inspiration import (
 from inspire_flow_backend.services.agent.func.get_project import (
     build_get_project_tool,
 )
+from inspire_flow_backend.services.agent.func.list_brands import build_list_brands_tool
 from inspire_flow_backend.services.agent.func.list_inspirations import (
     build_list_inspirations_tool,
 )
@@ -67,6 +75,9 @@ from inspire_flow_backend.services.agent.web_search import (
     WebSearchService,
 )
 
+if TYPE_CHECKING:
+    from inspire_flow_backend.services.agent.brand_advisor import BrandAdvisor
+
 
 def build_agent_tools(
     *,
@@ -74,6 +85,7 @@ def build_agent_tools(
     settings: AgentToolSettings,
     clock: Clock,
     resolver: HostResolver | None,
+    brand_advisor: BrandAdvisor | None = None,
 ) -> list[FunctionTool]:
     search_service = WebSearchService(
         primary=DuckDuckGoHtmlSearchProvider(http_client, settings),
@@ -109,4 +121,6 @@ def build_agent_tools(
         build_remove_inspiration_project_tool(),
         build_update_current_user_tool(),
         build_update_user_profile_text_tool(),
+        build_list_brands_tool(),
+        build_analyze_brand_project_tool(brand_advisor=brand_advisor),
     ]

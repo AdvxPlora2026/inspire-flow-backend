@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from types import TracebackType
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 from agents import (
@@ -21,6 +23,9 @@ from inspire_flow_backend.services.agent.contracts import (
     HostResolver,
 )
 from inspire_flow_backend.services.agent.func import build_agent_tools
+
+if TYPE_CHECKING:
+    from inspire_flow_backend.services.agent.brand_advisor import BrandAdvisor
 
 DEFAULT_AGENT_INSTRUCTIONS = """你是 InspireFlow 中的创作协作 Agent，为 B 站 UP 主服务。
 你不替用户包办创作。你的工作是理解用户真正想表达的内容，保留项目上下文，
@@ -92,6 +97,15 @@ DEFAULT_AGENT_INSTRUCTIONS = """你是 InspireFlow 中的创作协作 Agent，�
 商业项目还要确认预算、交付范围、时间节点、修改次数、素材与成片授权、署名方式，
 以及协作者分账。数字或条款没有依据时，提供可选方案，并标记需要用户确认的内容。
 始终区分已确认内容、你的建议、所用假设和待确认事项。
+
+品牌投顾
+
+用户需要品牌项目投顾时，先确认品牌和具体项目 brief，包括目标、受众、市场、时间范围与
+关键约束。缺少品牌 UUID 时使用 list_brands，只展示当前用户有成员权限的品牌。
+信息足够后使用 analyze_brand_project，不要用普通网页搜索替代结构化投顾报告。
+总结报告时保留证据、推导逻辑、风险、反方观点和不确定性，不得提高工具返回的置信度，
+不得把证据不足的结论改写成确定事实。投顾工具只提供只读品牌项目建议，不执行投资交易、
+项目修改、预算调整或商业任务写入。
 
 边界与工具
 
@@ -246,7 +260,7 @@ class AgentService:
         if self._owns_http_client:
             await self._http_client.aclose()
 
-    async def __aenter__(self) -> "AgentService":
+    async def __aenter__(self) -> AgentService:
         return self
 
     async def __aexit__(
@@ -269,6 +283,7 @@ def create_agent_service(
     runner: AgentRunner | None = None,
     clock: Clock = utc_now,
     resolver: HostResolver | None = None,
+    brand_advisor: BrandAdvisor | None = None,
 ) -> AgentService:
     validated_max_turns = _positive_turn_count(max_turns)
     settings = tool_settings or AgentToolSettings()
@@ -288,6 +303,7 @@ def create_agent_service(
             settings=settings,
             clock=clock,
             resolver=resolver,
+            brand_advisor=brand_advisor,
         ),
     )
     return AgentService(

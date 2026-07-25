@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -170,6 +171,90 @@ def test_fetcher_extracts_visible_html_and_title() -> None:
         "text": "Hello world. Visible paragraph.",
         "truncated": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        (
+            '<meta property="article:published_time" content="2026-07-24T18:30:00+08:00">',
+            datetime(2026, 7, 24, 10, 30, tzinfo=UTC),
+        ),
+        (
+            '<script type="application/ld+json">'
+            '{"@type":"NewsArticle","datePublished":"2026-07-24T09:15:00Z"}'
+            "</script>",
+            datetime(2026, 7, 24, 9, 15, tzinfo=UTC),
+        ),
+        (
+            '<time datetime="2026-07-23T20:00:00-04:00">Yesterday</time>',
+            datetime(2026, 7, 24, 0, 0, tzinfo=UTC),
+        ),
+    ],
+)
+def test_fetcher_extracts_verified_publication_metadata(
+    metadata: str,
+    expected: datetime,
+) -> None:
+    page = f"<html><head>{metadata}</head><body><main>Article</main></body></html>"
+
+    async def scenario():
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                text=page,
+                headers={"Content-Type": "text/html"},
+                request=request,
+            )
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            fetcher = WebPageFetcher(
+                client,
+                AgentToolSettings(),
+                resolver=resolver_for(PUBLIC_IPV4),
+            )
+            return await fetcher.fetch("https://example.com/article")
+
+    result = run(scenario())
+
+    assert result.published_at == expected
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        '<meta property="article:published_time" content="2026-07-24">',
+        '<meta property="article:published_time" content="not-a-date">',
+        (
+            '<meta property="article:published_time" content="2026-07-24T09:00:00Z">'
+            '<time datetime="2026-07-24T10:00:00Z">Later</time>'
+        ),
+        "<p>Published on 2026-07-24 at 09:00 UTC</p>",
+    ],
+)
+def test_fetcher_does_not_guess_ambiguous_or_invalid_publication_time(metadata: str) -> None:
+    page = f"<html><head>{metadata}</head><body><main>Article</main></body></html>"
+
+    async def scenario():
+        transport = httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                text=page,
+                headers={"Content-Type": "text/html"},
+                request=request,
+            )
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            fetcher = WebPageFetcher(
+                client,
+                AgentToolSettings(),
+                resolver=resolver_for(PUBLIC_IPV4),
+            )
+            return await fetcher.fetch("https://example.com/article")
+
+    result = run(scenario())
+
+    assert result.published_at is None
 
 
 @pytest.mark.parametrize(

@@ -107,6 +107,8 @@ def test_factory_builds_agent_with_deterministic_tools() -> None:
             "remove_inspiration_project",
             "update_current_user",
             "update_user_profile_text",
+            "list_brands",
+            "analyze_brand_project",
         ]
         assert service.agent.instructions == DEFAULT_AGENT_INSTRUCTIONS
         assert "不可信" in DEFAULT_AGENT_INSTRUCTIONS
@@ -196,6 +198,20 @@ def test_default_instructions_protect_context_and_external_operations() -> None:
     ]
 
     for concept in expected_concepts:
+        assert concept in DEFAULT_AGENT_INSTRUCTIONS
+
+
+def test_default_instructions_define_brand_advisory_workflow() -> None:
+    for concept in [
+        "品牌投顾",
+        "具体项目 brief",
+        "list_brands",
+        "analyze_brand_project",
+        "证据",
+        "推导逻辑",
+        "置信度",
+        "不得提高",
+    ]:
         assert concept in DEFAULT_AGENT_INSTRUCTIONS
 
 
