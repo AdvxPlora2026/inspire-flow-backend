@@ -1,6 +1,7 @@
 # 项目系统交接说明
 
-项目接口统一位于 `/api/v1/projects`，所有操作都需要登录凭据，并且只会访问当前用户自己的项目。项目 ID 使用 UUID；同一个 UUID 对其他用户不可见。
+项目接口位于 `/api/v1/projects`。所有操作都需要登录，并且只能访问当前用户的项目。
+项目 ID 是 UUID；其他用户即使拿到这个 ID，也读不到对应项目。
 
 ## 1. 获取访问凭据
 
@@ -17,6 +18,8 @@ export ACCESS_TOKEN="<登录响应中的 access_token>"
 Authorization: Bearer $ACCESS_TOKEN
 ```
 
+`POST`、`PATCH` 和 `DELETE` 还需要新的幂等键。网络重试要复用原键和原请求内容。
+
 注册、登录和注销的完整调用方式见 `docs/HANDOFF_USERSYS.MD`。
 
 ## 2. 用描述生成可编辑草稿
@@ -24,6 +27,7 @@ Authorization: Bearer $ACCESS_TOKEN
 ```bash
 curl -sS -X POST "$API_BASE_URL/projects/drafts" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{"description":"做一期在 Mac 上本地部署语音识别的实测视频"}'
 ```
@@ -40,7 +44,9 @@ curl -sS -X POST "$API_BASE_URL/projects/drafts" \
 }
 ```
 
-这一步不会创建数据库记录，也不会返回 `id`、`user_id` 或时间。前端应让用户检查和修改草稿，再调用创建接口保存。草稿接口需要配置 `MODEL_API_KEY`、`MODEL_NAME` 和 `MODEL_BASE_URL`；模型暂时不可用不会影响手动创建、查询、修改或删除项目。
+这一步不会写数据库，也不会返回 `id`、`user_id` 或时间。前端可以先让用户修改草稿，
+确认后再调用创建接口。草稿接口依赖 `MODEL_API_KEY`、`MODEL_NAME` 和
+`MODEL_BASE_URL`；模型不可用时，手动创建和项目 CRUD 仍可使用。
 
 ## 3. 手动创建或保存草稿
 
@@ -49,6 +55,7 @@ curl -sS -X POST "$API_BASE_URL/projects/drafts" \
 ```bash
 curl -sS -X POST "$API_BASE_URL/projects" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Mac 本地语音识别实测",
@@ -117,6 +124,7 @@ curl -sS "$API_BASE_URL/projects/$PROJECT_ID" \
 ```bash
 curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{"summary":"补充 MPS、CPU 的速度和准确率对比"}'
 ```
@@ -124,6 +132,7 @@ curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
 ```bash
 curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{"icon_url":null}'
 ```
@@ -132,7 +141,8 @@ curl -sS -X PATCH "$API_BASE_URL/projects/$PROJECT_ID" \
 
 ```bash
 curl -i -X DELETE "$API_BASE_URL/projects/$PROJECT_ID" \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 如果删除会让某些灵感失去最后一个项目和来源，接口返回
@@ -141,7 +151,8 @@ curl -i -X DELETE "$API_BASE_URL/projects/$PROJECT_ID" \
 ```bash
 curl -i -X DELETE \
   "$API_BASE_URL/projects/$PROJECT_ID?delete_orphan_inspirations=true" \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 ## 6. Agent 项目工具
@@ -156,7 +167,9 @@ update_project
 delete_project
 ```
 
-模型看不到也不能提交 `user_id`。创建采用“草稿 → 用户确认 → 保存”两轮流程；`confirmed=false` 只返回草稿，不写数据库。删除也必须先用 `confirmed=false` 展示项目标题和 UUID，等用户在单独一轮明确确认后，才允许用 `confirmed=true` 删除。
+模型看不到也不能提交 `user_id`。创建分两轮：`confirmed=false` 先返回草稿，用户确认
+后再用 `confirmed=true` 保存。删除同样先返回项目标题和 UUID，下一轮收到明确确认后
+才执行。
 
 `create_project` 可以接收 `icon_url`。`update_project` 可以传新的
 `icon_url`，或用 `clear_icon=true` 清空图标。它会直接修改用户明确指定的字段。查询外部用户或不存在的 UUID 都只返回安全的 `project_not_found`，不会暴露项目是否真实存在。

@@ -10,8 +10,8 @@ Content-Type: application/json
 ```
 
 品牌 owner 和 member 都可以调用。品牌不存在或当前用户不是成员时统一返回
-`404 brand_not_found`。接口即时生成报告，不保存报告历史；相同用户、品牌、请求体和
-幂等键在 24 小时内会重放加密保存的响应。
+`404 brand_not_found`。报告即时生成，不保存历史。相同用户、方法、品牌路径、请求
+内容和幂等键会重放加密保存的首次响应。
 
 ## 2. 请求
 
@@ -49,7 +49,7 @@ curl --fail-with-body \
 
 ## 3. 报告逻辑
 
-报告使用简体中文，关键字段如下：
+接口返回简体中文报告，字段包括：
 
 - `evidence_status`: `sufficient`、`limited` 或 `insufficient`。
 - `brand`: 已校验成员权限后的品牌投影。
@@ -61,12 +61,13 @@ curl --fail-with-body \
   对项目的含义、为什么建议成立、风险、反方观点、假设和置信度。
 - `caveats[]` 与 `next_research_steps[]`: 数据缺口和下一步研究动作。
 
-应用代码会从本次 Agent 真实的 `search_website` / `fetch_webpage` 工具输出重建证据
-账本。模型草稿中的 URL 若没有出现在账本中，整次请求返回 `502 agent_run_failed`，
-不会把虚构引用交给客户端。证据摘要直接取自真实搜索摘要或抓取正文的有界摘录，
-不会采用模型自行编写的“事实”；同一规范化 URL 即使被模型赋予多个证据 ID，也只保留
-第一条，不能重复计入三条证据门槛。空白搜索摘要不会形成证据；抓取正文为空时只会
-保留同 URL 已有的搜索摘要，不会制造空证据。
+应用代码会根据本次 Agent 的 `search_website` 和 `fetch_webpage` 输出重建证据账本。
+模型草稿中的 URL 如果不在账本里，请求会返回 `502 agent_run_failed`，不会把该引用
+交给客户端。
+
+证据摘要来自搜索摘要或抓取正文的限长摘录，不采用模型自行编写的“事实”。同一规范化
+URL 只保留第一个证据 ID，不能靠重复引用凑够三条证据。空白搜索摘要不算证据；抓取
+正文为空时，沿用该 URL 已有的搜索摘要。
 
 `sufficient` 必须同时满足：至少 3 条相关证据、至少 2 个来源域名、至少 1 条来源有
 已核验且位于查询窗口内的发布时间。任何弱于该门槛的报告只能是 `limited` 或
@@ -85,8 +86,8 @@ curl --fail-with-body \
 | 502 | `agent_run_failed` | 模型、提供商、结构化输出或证据校验失败 |
 | 503 | `agent_unavailable` | `MODEL_*` 配置不完整 |
 
-公开搜索失败不一定产生 `502`。如果 Advisor 能诚实输出空证据和下一步研究动作，接口
-会返回 `200` 且 `evidence_status=insufficient`。
+公开搜索失败不一定返回 `502`。如果 Advisor 能返回空证据和后续研究动作，接口仍会
+返回 `200`，此时 `evidence_status=insufficient`。
 
 ## 5. Agent 内部工具
 
@@ -107,7 +108,7 @@ analyze_brand_project(brand_id, project_brief, project_id=None,
 MVP 不新增 `BrandProject`、`AdvisoryReport` 或报告历史表。项目上下文来自请求内 brief，
 现有 `Project` 仍属于单个用户，不会被静默改成品牌资产。
 
-未来升级按独立聚合推进：
+后续版本计划：
 
 1. 新增品牌拥有的 `BrandProject`，明确定义成员创建、编辑、归档和审计权限，并通过
    显式关联连接现有个人项目与商业任务。

@@ -1,8 +1,7 @@
 # Agent 对话与长期记忆接入说明
 
-这套接口让 InspireFlow 在不同登录会话之间继续同一段创作对话，并在同一用户
-的不同对话之间共享经过筛选的长期记忆。原始对话不会跨项目串联；只有创作者
-资料和活跃长期记忆会跨对话使用。
+用户重新登录后仍能继续原来的创作对话。不同对话之间只共享创作者资料和处于
+`active` 状态的长期记忆，原始消息不会被拼到其他对话里。
 
 ## 运行前配置
 
@@ -59,6 +58,9 @@ export ACCESS_TOKEN='<登录接口返回的令牌>'
 Authorization: Bearer <access-token>
 ```
 
+`POST`、`PATCH` 和 `DELETE` 还要带 `Idempotency-Key`。网络重试复用原键和原请求
+内容，新的用户操作生成新键。
+
 Bearer 登录会话只证明用户身份。Agent 对话是独立的持久化资源。注销、令牌过期
 或重新登录不会删除对话。
 
@@ -76,6 +78,7 @@ CONVERSATION="$(
     --request POST "$BASE_URL/conversations" \
     --header 'Content-Type: application/json' \
     --header "Authorization: Bearer $ACCESS_TOKEN" \
+    --header "Idempotency-Key: $(uuidgen)" \
     --data '{"title":"本地 AI 工具选题"}'
 )"
 CONVERSATION_ID="$(
@@ -91,6 +94,7 @@ curl --fail-with-body \
   --request POST "$BASE_URL/conversations/$CONVERSATION_ID/messages" \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $(uuidgen)" \
   --data '{"content":"我想做一期普通人如何在本地运行小模型的视频"}'
 ```
 
@@ -120,9 +124,10 @@ curl --fail-with-body \
 }
 ```
 
-接口当前不流式返回。模型搜索、网页抓取和多轮工具调用都会计入请求耗时。客户端
-超时后不要立即重复发送相同内容；先读取消息列表，确认用户消息或助手回复是否
-已经保存，再决定是否重试。
+这个接口会一次性返回完整 JSON。需要增量文本时，使用
+`POST /api/v1/conversations/{conversation_id}/messages/stream`。模型搜索、网页抓取
+和多轮工具调用都计入请求耗时。请求超时后，用原 `Idempotency-Key` 重试，不要生成
+新键重复创建一轮对话。
 
 ## 对话和消息列表
 
@@ -185,6 +190,7 @@ curl --fail-with-body \
   --request POST "$BASE_URL/users/me/memories" \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $(uuidgen)" \
   --data '{
     "category":"workflow_preference",
     "content":"脚本确认后再生成分镜",
@@ -216,8 +222,8 @@ DELETE /api/v1/users/me/memories/{memory_id}
 列表支持 `status`、`category`、`limit` 和 `offset`。只有 `active` 记忆会进入
 模型上下文，置顶项优先。
 
-低敏感、由用户明确说出的事实可以自动提取。生日、真实姓名、联系方式等敏感
-信息，只有用户在同一条消息里明确说“请记住”或类似表达时才允许保存。密码、
+用户明确说出的低敏感事实可以自动提取。生日、真实姓名、联系方式等敏感信息，
+只有用户在同一条消息里明确说“请记住”或类似表达时才允许保存。密码、
 登录令牌、API key、私钥和恢复码无论用户是否要求都不会进入长期记忆；对话中
 识别出的凭据会先替换为 `[REDACTED_CREDENTIAL]`。
 

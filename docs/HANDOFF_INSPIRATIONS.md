@@ -1,6 +1,7 @@
 # 灵感系统交接说明
 
-灵感接口统一位于 `/api/v1/inspirations`。所有操作都需要 Bearer 凭据，只能访问当前用户自己的灵感和项目。灵感、项目、来源对话和来源消息都使用 UUID。
+灵感接口位于 `/api/v1/inspirations`。所有操作都需要 Bearer 凭据，只能访问当前用户
+的灵感和项目。灵感、项目、来源对话和来源消息都使用 UUID。
 
 ## 1. 准备访问凭据
 
@@ -9,6 +10,8 @@ export API_BASE_URL="http://127.0.0.1:8000/api/v1"
 export ACCESS_TOKEN="<登录响应中的 access_token>"
 export AUTH_HEADER="Authorization: Bearer $ACCESS_TOKEN"
 ```
+
+写请求还要带 `Idempotency-Key`。同一次操作因超时重试时，继续使用原键和原请求内容。
 
 注册、登录和注销见 `docs/HANDOFF_USERSYS.MD`。不要把真实密码、访问令牌或模型密钥写入代码、文档或 Git。
 
@@ -19,6 +22,7 @@ export AUTH_HEADER="Authorization: Bearer $ACCESS_TOKEN"
 ```bash
 curl -sS -X POST "$API_BASE_URL/inspirations" \
   -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Mac 本地转写速度对比",
@@ -71,6 +75,7 @@ export SECOND_PROJECT_ID="<项目 UUID>"
 
 curl -sS -X POST "$API_BASE_URL/inspirations" \
   -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d "{
     \"content\":\"把本地转写拆成安装、速度和效果三期\",
@@ -123,6 +128,7 @@ curl -sS "$API_BASE_URL/inspirations/$INSPIRATION_ID" \
 ```bash
 curl -sS -X PATCH "$API_BASE_URL/inspirations/$INSPIRATION_ID" \
   -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d "{
     \"status\":\"developing\",
@@ -140,7 +146,8 @@ curl -sS -X PATCH "$API_BASE_URL/inspirations/$INSPIRATION_ID" \
 ```bash
 curl -i -X PUT \
   "$API_BASE_URL/inspirations/$INSPIRATION_ID/projects/$SECOND_PROJECT_ID" \
-  -H "$AUTH_HEADER"
+  -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 移除操作也是幂等的：
@@ -148,7 +155,8 @@ curl -i -X PUT \
 ```bash
 curl -i -X DELETE \
   "$API_BASE_URL/inspirations/$INSPIRATION_ID/projects/$SECOND_PROJECT_ID" \
-  -H "$AUTH_HEADER"
+  -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 成功返回空的 `204`。如果操作会让非 `inbox` 灵感失去最后一个项目和来源，返回 `409 inspiration_association_required`；可以在同一次 `PATCH` 中先把状态改回 `inbox` 并清空 `project_ids`。
@@ -178,7 +186,8 @@ curl -sS \
 
 ```bash
 curl -i -X DELETE "$API_BASE_URL/inspirations/$INSPIRATION_ID" \
-  -H "$AUTH_HEADER"
+  -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 成功返回空的 `204`，项目关联一并删除。
@@ -205,7 +214,8 @@ curl -i -X DELETE "$API_BASE_URL/inspirations/$INSPIRATION_ID" \
 ```bash
 curl -i -X DELETE \
   "$API_BASE_URL/projects/$FIRST_PROJECT_ID?delete_orphan_inspirations=true" \
-  -H "$AUTH_HEADER"
+  -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 删除对话使用同一个查询参数：
@@ -213,7 +223,8 @@ curl -i -X DELETE \
 ```bash
 curl -i -X DELETE \
   "$API_BASE_URL/conversations/<对话 UUID>?delete_orphan_inspirations=true" \
-  -H "$AUTH_HEADER"
+  -H "$AUTH_HEADER" \
+  -H "Idempotency-Key: $(uuidgen)"
 ```
 
 确认后的目标资源、关联和孤立灵感会在一个数据库事务中删除。仍有其他项目或有效来源的灵感会保留。
@@ -232,10 +243,10 @@ add_inspiration_project
 remove_inspiration_project
 ```
 
-规则：
+工具行为：
 
-- 用户表达清晰、可识别的创作想法时，Agent 可以立即调用 `create_inspiration`，然后告知保存结果。
-- 内容像一般讨论或表达含糊时，Agent 先询问是否保存。
+- 用户说出明确的创作想法时，Agent 可以直接调用 `create_inspiration`，再返回保存结果。
+- 如果内容只是一般讨论，或还看不出是否要保存，Agent 会先询问。
 - 耐久对话会自动注入当前对话和用户消息来源，模型看不到也不能填写 `user_id`、来源对话 ID 或来源消息 ID。
 - `delete_inspiration` 先以 `confirmed=false` 返回标题和 UUID；用户在后续一轮确认后才能传 `confirmed=true`。
 - 项目删除预览会返回 `orphaned_inspirations`。只有用户确认这些影响后，才能同时传 `confirmed=true` 和 `delete_orphan_inspirations=true`。

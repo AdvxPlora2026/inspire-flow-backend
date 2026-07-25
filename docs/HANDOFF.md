@@ -1,8 +1,7 @@
 # InspireFlow 后端 API 接入手册
 
-这份文档面向前端、客户端和后续接手后端的开发者，内容以当前代码里的
-OpenAPI 定义为准。默认地址是 `http://127.0.0.1:8000`，所有业务接口继续使用
-`/api/v1` 前缀。
+前端、客户端和后端接手人员都可以按这份文档联调。接口定义以当前 OpenAPI 为准。
+本地默认地址是 `http://127.0.0.1:8000`，业务接口使用 `/api/v1` 前缀。
 
 ## 1. 启动服务
 
@@ -25,7 +24,7 @@ uv run uvicorn inspire_flow_backend.main:app --reload
 - OpenAPI JSON：`http://127.0.0.1:8000/openapi.json`
 - 健康检查：`http://127.0.0.1:8000/api/v1/health`
 
-本地配置放在 `.env`，这个文件已经加入 `.gitignore`。至少需要关注以下配置：
+本地配置写在 `.env`，该文件已经加入 `.gitignore`。常用配置如下：
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -40,9 +39,9 @@ uv run uvicorn inspire_flow_backend.main:app --reload
 | `APP_STT_API_KEY` | 空 | Hack Club AI 密钥，启用 STT worker 时必填 |
 | `APP_STT_BASE_URL` | `https://ai.hackclub.com/proxy/v1/replicate` | Replicate 代理地址 |
 
-模型没有配置时，注册、登录、手动维护项目等普通接口仍可使用，但 Agent
-对话和项目草稿生成会返回 `503 agent_unavailable`。STT 没有启用或 worker
-未就绪时，提交任务会返回 `503 stt_unavailable`。
+没有配置模型时，注册、登录和手动项目管理仍可使用；Agent 对话和项目草稿生成返回
+`503 agent_unavailable`。STT 未启用或 worker 未就绪时，提交任务返回
+`503 stt_unavailable`。
 
 ## 2. 调用约定
 
@@ -75,8 +74,8 @@ export INTEREST_ID='<合作意向 UUID>'
 export INBOX_ITEM_ID='<收件箱条目 UUID>'
 ```
 
-业务写请求还要提供一个 8～128 字符的幂等键。每次新操作生成新键；网络重试必须
-复用原键和原请求内容：
+Bearer 鉴权的写请求还要提供 8～128 字符的幂等键。新操作生成新键；网络重试复用
+原键和原请求内容：
 
 ```bash
 export IDEMPOTENCY_KEY="$(uuidgen)"
@@ -139,7 +138,7 @@ export IDEMPOTENCY_KEY="$(uuidgen)"
 }
 ```
 
-客户端应优先按 `error.code` 分支，不要依赖英文 `message`。主要错误码见本文末尾。
+客户端按 `error.code` 分支，不要依赖英文 `message`。主要错误码见本文末尾。
 
 ## 3. 健康检查
 
@@ -170,9 +169,9 @@ curl --fail-with-body "$API_BASE/health"
 `status` 可能是 `ok`、`degraded` 或 `unavailable`。数据库不可用时返回 `503`，
 此时响应结构不变，`services.database` 为 `unavailable`。
 
-`services.injective` 在配置了 `APP_INJECTIVE_PRIVATE_KEY` 时为 `ok`，否则为
-`not_configured`。只有数据库、模型、Injective 三者都就绪时 `status` 才是 `ok`；
-缺少模型或链上配置时为 `degraded`，接口仍可正常使用其它能力。
+配置 `APP_INJECTIVE_PRIVATE_KEY` 后，`services.injective` 为 `ok`，否则为
+`not_configured`。数据库、模型和 Injective 都就绪时，`status` 才是 `ok`。缺少模型
+或链上配置时返回 `degraded`，其他可用接口不受影响。
 
 ## 4. 用户与登录
 

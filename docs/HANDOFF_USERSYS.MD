@@ -1,7 +1,6 @@
 # 用户系统接入说明
 
-这个服务不带默认账号。接入时先注册，再用同一昵称和密码登录。注册不会自动
-创建会话。
+服务没有默认账号。先注册，再用同一昵称和密码登录。注册本身不会创建会话。
 
 ## 先跑起来
 
@@ -150,6 +149,9 @@ unset PASSWORD
 Authorization: Bearer <access_token>
 ```
 
+Bearer 鉴权的写请求还需要 `Idempotency-Key`。同一次操作重试时复用原键；修改了
+请求内容就生成新键。
+
 用当前令牌读取自己的资料：
 
 ```bash
@@ -181,6 +183,7 @@ curl --fail-with-body \
   --request PATCH "$BASE_URL/users/me" \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $(uuidgen)" \
   --data '{"nickname":"aria-new","avatar_url":"https://cdn.example.com/aria.png"}'
 ```
 
@@ -191,6 +194,7 @@ curl --fail-with-body \
   --request PATCH "$BASE_URL/users/me" \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $(uuidgen)" \
   --data '{"avatar_url":null}'
 ```
 
@@ -214,6 +218,7 @@ curl --fail-with-body \
   --request PATCH "$BASE_URL/users/me/profile" \
   --header 'Content-Type: application/json' \
   --header "Authorization: Bearer $ACCESS_TOKEN" \
+  --header "Idempotency-Key: $(uuidgen)" \
   --data '{
     "bio":"记录从灵感到成片的过程",
     "timezone":"Asia/Shanghai",
@@ -227,8 +232,8 @@ curl --fail-with-body \
 PATCH 至少要提供一个字段。可空字段传 `null` 表示清空。内容方向会去除空项和
 重复项；没有实际变化时 `updated_at` 保持不变。
 
-真实姓名、生日、联系方式等一般个人信息不属于固定创作者资料。需要长期保存时，
-应走长期记忆接口，并遵守敏感信息必须由用户明确要求保存的规则。参见
+真实姓名、生日、联系方式不属于固定创作者资料。需要长期保存时，使用长期记忆
+接口；敏感信息只有在用户明确要求后才能保存。参见
 [Agent 对话与记忆接入说明](HANDOFF_AGENT_MEMORY.md)。
 
 ## 注销当前会话
@@ -277,14 +282,14 @@ unset ACCESS_TOKEN
 `validation_error` 可能带有 `details` 数组，用于标出字段位置和错误类型。
 响应不会回显提交的密码。
 
-## 保存凭据时的边界
+## 凭据保存边界
 
 Bearer 令牌代表当前会话权限。不要把真实令牌放进源码、Git 提交、URL、
 日志、问题单或聊天记录。浏览器客户端也不应把令牌放进可被页面脚本随意读取
 的长期存储。
 
-生产环境必须使用 HTTPS。登录限流应配置在网关或反向代理层，本服务没有内置
-限流，也没有刷新令牌接口。
+生产环境必须使用 HTTPS。登录限流放在网关或反向代理层；本服务没有内置限流，
+也不提供刷新令牌接口。
 
 登录会话和 Agent 对话互相独立。注销只撤销当前 Bearer 令牌，不会删除 Agent
 对话、消息、长期记忆或创作者资料。重新登录后仍可以凭同一用户身份继续原对话。

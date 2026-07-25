@@ -1,8 +1,8 @@
 # 商业任务与链上存证交接说明
 
-商业任务接口统一位于 `/api/v1/commercial-tasks`，把创作结算流程写到 Injective
-链上做存证。所有写操作都需要登录凭据，并且只会访问当前用户自己的任务；任务 ID
-使用 UUID，对其他用户不可见。
+商业任务接口位于 `/api/v1/commercial-tasks`，结算流程会在 Injective 链上留下
+存证。写操作需要登录，只能访问当前用户的任务。任务 ID 是 UUID，其他用户无法用
+它读取任务。
 
 链上只写商业事实摘要（action、任务 id、制品 sha256、金额、币种），**绝不写标题、
 正文等隐私内容**。私钥只从环境变量读取，绝不落库或打日志。
@@ -67,7 +67,7 @@ prepared → broadcast → confirmed / failed
    执行结果给出 `confirmed`（`status == 1`）或 `failed`（回执显示 revert）。
 2. **nonce 递进兜底**：部分 Injective testnet JSON-RPC 端点（如
    `k8s.testnet.json-rpc.injective.network`）不按交易哈希建立索引，`eth_getTransactionReceipt`
-   对已上链交易也长期返回空。此时回退到 nonce 判定——当发送账户已确认的 nonce
+   对已上链交易也长期返回空。此时回退到 nonce 判定：当发送账户已确认的 nonce
    超过该交易的 nonce，即说明该交易已被区块打包，标记为 `confirmed`。
 
 > 语义提示：走 nonce 兜底时，`confirmed` 表示“已被区块打包”，而非“回执确认执行成功”。
