@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/agent-tools.md", "reason": "Verify tool order, citation safety, outbound limits, and deterministic tests"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify safe cross-tenant and Agent/provider error contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify complete project quality gate"}
+{"file": ".trellis/tasks/07-25-brand-project-ai-advisor/research/current-design.md", "reason": "Verify implementation against researched domain and lifecycle constraints"}

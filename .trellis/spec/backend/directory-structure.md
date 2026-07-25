@@ -54,7 +54,10 @@ but they must not redefine response contracts or implement storage access.
 | `services/agent/conversation.py` | Durable Agent turn orchestration |
 | `services/agent/streaming.py` | App-scoped background SSE Agent turns and safe event encoding |
 | `services/agent/project_drafting.py` | Structured, non-persisted project drafts from descriptions |
-| `services/agent/runtime.py` | Per-request model, Agent, compactor, extractor, and project-drafter lifecycle |
+| `services/agent/brand_advisor.py` | Search/fetch-only structured Advisor and deterministic evidence finalization |
+| `services/agent/runtime.py` | Per-request model, shared outbound client, Agent, compactor, extractor, drafter, and Advisor lifecycle |
+| `schemas/advisory.py` | Advisory request, draft, evidence, reasoning, and public report contracts |
+| `services/advisory.py` | Brand/project authorization, immutable context assembly, and Advisor failure mapping |
 | `services/projects.py` | User-scoped project lifecycle and draft failure mapping |
 | `services/inspirations.py` | User-scoped inspiration lifecycle, project links, search, and deletion impact |
 | `services/brands.py` | Brand organization, membership, owner, and invitation behavior |
@@ -73,6 +76,13 @@ but they must not redefine response contracts or implement storage access.
 New HTTP features should normally add a matching route, schema, and service
 module. Do not add an empty persistence implementation merely to make every
 feature touch the data layer.
+
+The brand advisory route is intentionally non-persistent:
+`api/routes/advisory.py` owns HTTP wiring, `schemas/advisory.py` owns all typed
+contracts, `services/advisory.py` owns membership and optional project checks,
+and `services/agent/brand_advisor.py` owns external research plus deterministic
+evidence finalization. Do not add an advisory repository or table until the
+versioned report-history product contract is approved.
 
 ---
 

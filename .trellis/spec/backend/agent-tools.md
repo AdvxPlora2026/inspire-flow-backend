@@ -1,7 +1,7 @@
 # Agent Service and Outbound Tool Guidelines
 
-> Executable contracts for the internal Agent service, no-key search, and
-> public webpage fetch boundary.
+> Executable contracts for the internal Agent service, no-key search, public
+> webpage fetch boundary, and evidence-backed brand advisory.
 
 ## Scenario: Internal Agent with Outbound Tools
 
@@ -43,6 +43,7 @@ def create_agent_service(
     runner: AgentRunner | None = None,
     clock: Clock = utc_now,
     resolver: HostResolver | None = None,
+    brand_advisor: BrandAdvisor | None = None,
 ) -> AgentService: ...
 
 
@@ -88,6 +89,10 @@ add_inspiration_project(inspiration_id, project_id)
 remove_inspiration_project(inspiration_id, project_id)
 update_current_user(nickname=None, avatar_url=None, clear_avatar=False)
 update_user_profile_text(profile_text=None, clear_profile_text=False)
+list_brands(limit=50, offset=0)
+analyze_brand_project(brand_id, project_brief, project_id=None,
+                      market="China mainland", focus_topics=None,
+                      lookback_days=7)
 ```
 
 Agent-visible FunctionTool definitions live under
@@ -117,7 +122,7 @@ Success contracts:
 | --- | --- |
 | `current_datetime` | `ok`, `timezone`, `iso_datetime`, `unix_timestamp` |
 | `search_website` | `ok`, normalized `query`, selected `provider`, bounded `results[{title,url,snippet}]` |
-| `fetch_webpage` | `ok`, final `url`, `content_type`, optional `title`, `text`, `truncated` |
+| `fetch_webpage` | `ok`, final `url`, `content_type`, optional `title`, `text`, `truncated`, optional verified `published_at` |
 | `create_project` | confirmation status plus `draft`, or created `project` |
 | `list_projects` | owned `projects`, `total`, `limit`, `offset` |
 | `get_project` / `update_project` | owned `project` |
@@ -129,6 +134,8 @@ Success contracts:
 | inspiration-project link tools | mutation status plus both UUIDs |
 | `update_current_user` | safe current `user` projection |
 | `update_user_profile_text` | normalized nullable `profile_text` |
+| `list_brands` | membership-scoped `brands`, `total`, `limit`, `offset` |
+| `analyze_brand_project` | typed `report` with evidence, reasoning, uncertainty, and next research steps |
 
 Project FunctionTools receive `AgentRunContext(db, user_id)` through
 `RunContextWrapper`; this first parameter is removed from the model-visible
@@ -180,6 +187,30 @@ text is included in the next turn's bounded, untrusted dynamic context but is
 intentionally absent from `UserPublic` and the public `/users/me` patch
 contract.
 
+Brand tools use the same trusted context. `list_brands` returns only active
+memberships. `analyze_brand_project` accepts a concrete request brief, optional
+current-user project UUID, free-form market, up to five focus topics, and a
+1..30 day lookback. It delegates to the same application service as
+`POST /api/v1/brands/{brand_id}/advisory-reports`; no model-visible `user_id`
+or alternate authorization path exists. Missing/non-member brands share
+`brand_not_found`, while unknown/foreign optional projects share
+`project_not_found`.
+
+The dedicated `ModelBrandAdvisor` may call only `search_website` and
+`fetch_webpage`. Its structured output is a draft. Application code rebuilds a
+ledger from that run's actual successful tool call/output pairs, canonicalizes
+and deduplicates public HTTP(S) URLs, rejects fabricated citations, derives
+executed queries and source domains, and overlays verified fetch metadata.
+SDK run-item parsing must support typed and mapping-backed `raw_item` values.
+Only the first draft evidence item for a canonical URL is accepted, and its
+public summary is a bounded excerpt of the actual search snippet or fetched
+page text rather than model-authored evidence prose. Empty search snippets do
+not create evidence; an empty fetch preserves an existing search excerpt and
+otherwise does not create a ledger entry.
+`sufficient` requires at least three accepted relevant items, two source
+domains, and at least one verified publication inside the requested window.
+Weak evidence cannot retain `high` confidence. No advisory report is persisted.
+
 The default search provider is DuckDuckGo's HTML page. On an expected provider
 failure or no parseable results, use the supported Chinese MediaWiki Action API
 and report `provider="mediawiki_zh"`. DuckDuckGo HTML is an unofficial,
@@ -188,6 +219,11 @@ best-effort adapter and has no availability contract.
 Search results and fetched page text are untrusted data. Default and custom
 Agent instructions must forbid following instructions found inside tool output;
 never expose secrets or internal context to an external page.
+
+HTML publication time is accepted only from machine-readable
+`article:published_time`, JSON-LD `datePublished`, or `<time datetime>` values.
+Accepted timestamps must include a timezone and are normalized to UTC. Invalid,
+undated, or conflicting metadata remains `null`; never infer a date from prose.
 
 The default instructions define InspireFlow as a Chinese-language creation
 assistant for Bilibili creators. They must:
@@ -213,6 +249,9 @@ assistant for Bilibili creators. They must:
   decisions without inventing project state, terms, or completed actions; and
 - keep other projects private and claim saves, uploads, publications,
   authorizations, payments, or deletions only after a successful tool result.
+- gather a concrete brand project brief, use membership-scoped brand discovery
+  when necessary, call the structured advisory tool for advice requests, and
+  preserve its evidence status and confidence when summarizing the result.
 
 Keep these product instructions in the single
 `DEFAULT_AGENT_INSTRUCTIONS` constant. Tests should assert the stable concepts,
@@ -225,6 +264,12 @@ The factory-created HTTP client uses `follow_redirects=False`,
 service closes only a client it created; callers retain ownership of injected
 clients. The Agents SDK owns model credential discovery through the process
 environment.
+
+`AgentRuntime` owns one bounded outbound HTTPX client and injects it into both
+the conversation Agent's research tools and `ModelBrandAdvisor`. The runtime
+closes the conversation Agent, outbound client, and shared model client exactly
+once. Stable tests inject a fake Advisor and never require model credentials,
+DNS, or public network access.
 
 ### 4. Validation & Error Matrix
 
@@ -251,6 +296,10 @@ environment.
 | Invalid nickname/avatar mutation | `invalid_user` |
 | Duplicate normalized nickname | `nickname_conflict` |
 | Invalid or overlong profile summary | `invalid_user_profile_text` |
+| Missing authenticated brand run context | `brand_context_unavailable` |
+| Invalid brand advisory request | `invalid_advisory_request` |
+| Unknown or inaccessible brand UUID | `brand_not_found` |
+| Advisor absent or expected model/provider failure | `advisory_unavailable` |
 | Unexpected runner, parser, or programming defect | Propagate; do not convert to tool data |
 
 Validate every redirect destination before requesting it. For every DNS answer,
@@ -314,6 +363,11 @@ as a compatibility shortcut.
 - Test user-tool schemas without `user_id`, visible-profile explicit
   authorization, profile-summary normalization/clearing, nickname conflicts,
   missing context, and cross-user isolation.
+- Test brand-tool schemas without `user_id`, membership-only listing,
+  brand/project non-disclosure, shared service delegation, and safe expected
+  errors. Test deterministic evidence extraction, citation rejection, URL
+  deduplication, publication freshness, source thresholds, and confidence
+  downgrade with synthetic SDK run items.
 
 ### 7. Wrong vs Correct
 

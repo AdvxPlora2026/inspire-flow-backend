@@ -87,6 +87,7 @@ Validation errors may add `error.details`. Each detail contains only
 | Non-inbox inspiration has no project or source | `409` | `inspiration_association_required` | None |
 | Deletion would orphan inspirations | `409` | `orphaned_inspirations_confirmation_required` | None |
 | Unknown or foreign brand | `404` | `brand_not_found` | None |
+| Advisory references unknown/foreign user project | `404` | `project_not_found` | None |
 | Brand member lacks owner role | `403` | `brand_owner_required` | None |
 | Mutation would remove last owner | `409` | `brand_last_owner_required` | None |
 | Workshop is not published | `404` | `workshop_not_published` | None |
@@ -168,6 +169,15 @@ shared handler produce the stable envelope.
 - Known SDK, provider, and transport failures map to `agent_run_failed`
   without exposing the upstream exception. Unexpected programming defects
   remain visible to the internal caller.
+- The brand advisory HTTP route uses the same mappings: unavailable model
+  configuration is `503 agent_unavailable`; malformed structured output,
+  fabricated citations, and expected provider failures are
+  `502 agent_run_failed`. Weak but valid research is a typed `200` report with
+  `limited` or `insufficient`, not an exception.
+- Agent FunctionTools translate those expected advisory failures into safe
+  model-facing codes: `brand_context_unavailable`, `brand_not_found`,
+  `project_not_found`, `invalid_advisory_request`, or
+  `advisory_unavailable`. Tool errors never include provider text.
 
 ---
 

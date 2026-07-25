@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/agent-tools.md", "reason": "Agent tool schemas, safe outbound research, trusted run context, and provider-free tests"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "FastAPI route/service/schema boundaries and runtime dependency ownership"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Stable API error envelopes and expected Agent failure mapping"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Required lint, formatting, test, and review gates"}
+{"file": ".trellis/tasks/07-25-brand-project-ai-advisor/research/current-design.md", "reason": "Repository evidence and selected no-persistence advisory architecture"}
