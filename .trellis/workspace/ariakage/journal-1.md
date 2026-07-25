@@ -414,3 +414,37 @@ Replaced local SenseVoice inference with pinned incredibly-fast-whisper through 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Brand project AI advisor
+
+**Date**: 2026-07-25
+**Task**: Brand project AI advisor
+**Branch**: `codex/inspiration-user-profile-handoff`
+
+### Summary
+
+Added a brand-scoped evidence-backed AI advisory API and Agent tools with deterministic citation, freshness, sufficiency, and confidence enforcement; documented the non-persistent MVP and future BrandProject/report upgrade path.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `54e0e9d` | (see git log) |
+| `f4e1690` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
