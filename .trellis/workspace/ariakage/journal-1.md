@@ -380,3 +380,37 @@ Added authenticated structured STT emotion and audio-event metadata with encrypt
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Replace STT with Replicate Whisper
+
+**Date**: 2026-07-25
+**Task**: Replace STT with Replicate Whisper
+**Branch**: `codex/inspiration-user-profile-handoff`
+
+### Summary
+
+Replaced local SenseVoice inference with pinned incredibly-fast-whisper through the Hack Club Replicate proxy; added secure file upload, polling, timeout cancellation, ffprobe fallback, compatibility results, tests, and deployment docs.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aab1c3f` | (see git log) |
+| `427b5d6` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
