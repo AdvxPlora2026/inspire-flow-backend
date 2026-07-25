@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend quality checklist and applicable guideline map."}
+{"file":".trellis/spec/backend/stt-worker.md","reason":"Check preserved STT API, encrypted persistence, cleanup, readiness, and stable error contracts."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Run required uv, Ruff, pytest, warning, dependency-lock, and secret checks."}
+{"file":".trellis/tasks/07-25-replace-stt-replicate-whisper/research/replicate-contract.md","reason":"Verify implementation matches the researched proxy paths, model version, file upload, polling, and payload boundaries."}

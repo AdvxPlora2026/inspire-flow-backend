@@ -37,7 +37,8 @@ uv run uvicorn inspire_flow_backend.main:app --reload
 | `MODEL_BASE_URL` | 空 | API 根地址或完整的 `/chat/completions` 地址 |
 | `APP_STT_ENABLED` | `false` | 是否允许提交语音转文字任务 |
 | `APP_STT_BROKER_URL` | `redis://127.0.0.1:6379/0` | STT Celery 使用的 Redis |
-| `APP_STT_DEVICE` | `auto` | `auto`、`cpu`、`cuda` 或 `mps` |
+| `APP_STT_API_KEY` | 空 | Hack Club AI 密钥，启用 STT worker 时必填 |
+| `APP_STT_BASE_URL` | `https://ai.hackclub.com/proxy/v1/replicate` | Replicate 代理地址 |
 
 模型没有配置时，注册、登录、手动维护项目等普通接口仍可使用，但 Agent
 对话和项目草稿生成会返回 `503 agent_unavailable`。STT 没有启用或 worker
@@ -1119,15 +1120,17 @@ curl --fail-with-body \
 
 ## 10. 语音转文字
 
-STT 是异步接口。FastAPI 只负责鉴权、校验和创建任务，SenseVoice-Small 在独立
-Celery worker 中执行。模型崩溃或 worker 被替换不会带崩 API 主进程。
+STT 是异步接口。FastAPI 只负责鉴权、校验和创建任务，独立 Celery worker
+通过 Hack Club AI 的 Replicate 代理调用固定版本的 incredibly-fast-whisper。
+上游请求失败或 worker 被替换不会带崩 API 主进程。
 
 默认限制：
 
 - 单文件最大 64 MiB；
 - 解码后最长 300 秒；
-- `APP_STT_DEVICE=auto` 时按 CUDA、MPS、CPU 的可用情况选择；
-- 成功结果包含全文、检测语言、汇总情绪和音频事件，不提供逐字时间戳或置信度。
+- prediction 默认最多等待 540 秒，必须短于 Celery soft limit；
+- 成功结果包含全文和检测语言；兼容字段 `emotions`、`audio_events` 固定为空数组，
+  不提供逐字时间戳、说话人识别或置信度。
 
 部署 STT 依赖和 worker 的完整步骤见
 [HANDOFF_STT.md](./HANDOFF_STT.md)。
@@ -1140,7 +1143,7 @@ Celery worker 中执行。模型崩溃或 worker 被替换不会带崩 API 主�
 | --- | --- | --- | --- |
 | `file` | binary | 是 | 无 |
 | `language` | string | 否 | `auto`，还可用 `zh`、`yue`、`en`、`ja`、`ko` |
-| `use_itn` | boolean | 否 | `true`，控制数字等文本规范化 |
+| `use_itn` | boolean | 否 | `true`，为接口兼容保留；Whisper 不提供对应参数 |
 
 ```bash
 curl --fail-with-body \
@@ -1197,8 +1200,8 @@ curl --fail-with-body "$API_BASE/transcriptions/$JOB_ID" \
   "use_itn": true,
   "text": "今天我们来测试一下自动字幕。",
   "detected_language": "zh",
-  "emotions": ["neutral"],
-  "audio_events": ["speech"],
+  "emotions": [],
+  "audio_events": [],
   "duration_seconds": 4.82,
   "error": null,
   "attempt_count": 1,
@@ -1209,10 +1212,8 @@ curl --fail-with-body "$API_BASE/transcriptions/$JOB_ID" \
 }
 ```
 
-情绪数组可能包含 `neutral`、`happy`、`sad`、`angry`、`fearful`、
-`disgusted`、`surprised`。音频事件可能包含 `speech`、`bgm`、`applause`、
-`laughter`、`cry`、`sneeze`、`breath`、`cough`、`sing`、`speech_noise`；
-两者在成功结果中也可能是空数组。
+当前 Whisper 模型不输出情绪或音频事件分类，因此新成功任务的两个兼容字段均为
+空数组。旧的成功数据仍按其已加密保存的分析结果返回。
 
 失败任务仍通过查询接口返回 `200`，但 `status` 为 `failed`：
 

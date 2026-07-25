@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index and pre-development checklist."}
+{"file":".trellis/spec/backend/stt-worker.md","reason":"Existing asynchronous STT API, queue, encryption, cleanup, readiness, and error contracts to preserve or update."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"TDD, uv dependency management, secret handling, and full validation requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The provider replacement crosses config, worker, persistence, API compatibility, tests, and operations docs."}
+{"file":".trellis/tasks/07-25-replace-stt-replicate-whisper/research/replicate-contract.md","reason":"Verified Hack Club proxy endpoints, exact model inputs, polling semantics, file upload strategy, and security constraints."}

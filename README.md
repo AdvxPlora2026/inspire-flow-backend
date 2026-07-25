@@ -102,12 +102,11 @@ can discover visible creators, follow them, send collaboration interests, and
 surface those events in the creator inbox.
 
 Authenticated asynchronous speech transcription is available through an
-isolated Celery worker and SenseVoice-Small. The API and model worker use
-separate processes and may use separate uv environments, so a native inference
-failure does not terminate the API. Successful results include clean text,
-detected language, aggregate emotion labels, and audio events as structured
-JSON. See
-[SenseVoice STT handoff](docs/HANDOFF_STT.md) for Redis, worker, device, and
+isolated Celery worker and the pinned Replicate incredibly-fast-whisper model
+through the Hack Club AI proxy. Provider failures do not terminate the API.
+Successful results include clean text and detected language; the retained
+`emotions` and `audio_events` compatibility fields are empty arrays. See the
+[Replicate STT handoff](docs/HANDOFF_STT.md) for provider, Redis, worker, and
 REST usage.
 
 ## Project structure
@@ -157,17 +156,18 @@ Settings are loaded from environment variables and an optional `.env` file.
 | `APP_STT_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery Redis broker |
 | `APP_STT_QUEUE` | `stt` | Dedicated Celery queue |
 | `APP_STT_SPOOL_DIR` | `.inspireflow-stt-spool` | Temporary raw-audio directory |
-| `APP_STT_MODEL_CACHE_DIR` | `.inspireflow-models` | SenseVoice model cache |
-| `APP_STT_MODEL` | `FunAudioLLM/SenseVoiceSmall` | FunASR model identifier |
-| `APP_STT_MODEL_HUB` | `hf` | `hf` for Hugging Face or `ms` for ModelScope |
-| `APP_STT_HF_DISABLE_XET` | `true` | Use standard HTTP downloads for proxy compatibility |
-| `APP_STT_DEVICE` | `auto` | `auto`, `cpu`, `cuda`, or `mps` |
+| `APP_STT_API_KEY` | blank | Hack Club AI bearer key; required by the enabled worker |
+| `APP_STT_BASE_URL` | `https://ai.hackclub.com/proxy/v1/replicate` | Replicate-compatible proxy root |
+| `APP_STT_MODEL` | `vaibhavs10/incredibly-fast-whisper:3ab86df6...` | Pinned Replicate model version |
+| `APP_STT_REQUEST_TIMEOUT_SECONDS` | `70` | Per-request provider timeout |
+| `APP_STT_PREDICTION_TIMEOUT_SECONDS` | `540` | Overall provider prediction deadline |
+| `APP_STT_POLL_INTERVAL_SECONDS` | `1` | Poll interval after synchronous wait expires |
 | `APP_STT_MAX_UPLOAD_MIB` | `64` | Maximum upload size |
 | `APP_STT_MAX_DURATION_SECONDS` | `300` | Maximum decoded audio duration |
 | `APP_STT_SOFT_TIME_LIMIT_SECONDS` | `600` | Celery soft task timeout |
 | `APP_STT_HARD_TIME_LIMIT_SECONDS` | `660` | Celery child replacement timeout |
 | `APP_STT_MAX_ATTEMPTS` | `3` | Worker-loss attempt bound |
-| `APP_STT_READY_TTL_SECONDS` | `30` | Model readiness heartbeat TTL |
+| `APP_STT_READY_TTL_SECONDS` | `30` | Worker provider-readiness heartbeat TTL |
 | `MODEL_API_KEY` | blank | OpenAI-compatible Chat Completions API credential |
 | `MODEL_NAME` | blank | Model name used by the Agent, compactor, and extractor |
 | `MODEL_BASE_URL` | blank | API root or complete `/chat/completions` endpoint |
