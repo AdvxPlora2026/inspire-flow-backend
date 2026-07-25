@@ -1,3 +1,4 @@
+import hashlib
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
@@ -41,6 +42,34 @@ def test_authenticated_write_requires_idempotency_key(client: TestClient) -> Non
     assert response.json()["error"]["code"] == "idempotency_key_required"
 
 
+def test_authenticated_logout_requires_idempotency_key(client: TestClient) -> None:
+    token = register_and_login(client)
+
+    missing = client.delete(
+        "/api/v1/sessions/current",
+        headers=bearer(token),
+    )
+    completed = client.delete(
+        "/api/v1/sessions/current",
+        headers={
+            **bearer(token),
+            "Idempotency-Key": "session-delete-0001",
+        },
+    )
+
+    assert missing.status_code == 400
+    assert missing.json()["error"]["code"] == "idempotency_key_required"
+    assert completed.status_code == 204
+
+
+def test_authenticated_read_does_not_require_idempotency_key(client: TestClient) -> None:
+    token = register_and_login(client)
+
+    response = client.get("/api/v1/users/me", headers=bearer(token))
+
+    assert response.status_code == 200
+
+
 def test_completed_write_replays_and_rejects_changed_payload(
     client: TestClient,
     db_session_factory,
@@ -72,7 +101,7 @@ def test_completed_write_replays_and_rejects_changed_payload(
     assert replay.json() == first.json()
     assert replay.headers["Idempotency-Replayed"] == "true"
     assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
+    assert conflict.json()["error"]["code"] == "idempotency_key_reused"
 
     with db_session_factory() as db:
         record = db.scalar(select(IdempotencyRecord))
@@ -96,6 +125,85 @@ def test_completed_write_replays_and_rejects_changed_payload(
     )
     assert in_progress.status_code == 409
     assert in_progress.json()["error"]["code"] == "idempotency_request_in_progress"
+    assert in_progress.json()["error"]["retryable"] is True
+
+
+def test_equivalent_json_payload_replays_after_canonicalization(client: TestClient) -> None:
+    token = register_and_login(client)
+    headers = {
+        **bearer(token),
+        "Content-Type": "application/json",
+        "Idempotency-Key": "canonical-json-0001",
+    }
+
+    first = client.patch(
+        "/api/v1/users/me",
+        headers=headers,
+        content=(
+            '{"nickname":"canonical-json-user","avatar_url":"https://cdn.example.com/avatar.png"}'
+        ),
+    )
+    replay = client.patch(
+        "/api/v1/users/me",
+        headers=headers,
+        content=(
+            '{ "avatar_url" : "https://cdn.example.com/avatar.png", '
+            '"nickname" : "canonical-json-user" }'
+        ),
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert replay.headers["Idempotency-Replayed"] == "true"
+
+
+def test_same_key_is_scoped_by_normalized_resource_path(
+    client: TestClient,
+    db_session_factory,
+) -> None:
+    token = register_and_login(client)
+    projects = []
+    for index in range(2):
+        response = client.post(
+            "/api/v1/projects",
+            headers={
+                **bearer(token),
+                "Idempotency-Key": f"path-project-create-{index}",
+            },
+            json={
+                "title": f"路径作用域项目 {index}",
+                "type": "测试",
+                "audience": "开发者",
+                "summary": "验证幂等键按规范化实际路径隔离",
+            },
+        )
+        assert response.status_code == 201
+        projects.append(response.json())
+
+    headers = {
+        **bearer(token),
+        "Idempotency-Key": "shared-delete-key-0001",
+    }
+    first = client.delete(f"/api/v1/projects/{projects[0]['id']}", headers=headers)
+    second = client.delete(f"/api/v1/projects/{projects[1]['id']}", headers=headers)
+
+    assert first.status_code == 204
+    assert second.status_code == 204
+    with db_session_factory() as db:
+        records = list(
+            db.scalars(
+                select(IdempotencyRecord).where(
+                    IdempotencyRecord.key_digest
+                    == hashlib.sha256(b"shared-delete-key-0001").hexdigest()
+                )
+            )
+        )
+    assert {record.route_template for record in records} == {
+        f"/api/v1/projects/{projects[0]['id']}",
+        f"/api/v1/projects/{projects[1]['id']}",
+    }
+    assert {record.brand_id for record in records} == {None}
 
 
 def test_empty_success_response_replays_without_body(client: TestClient) -> None:
@@ -211,10 +319,6 @@ def test_openapi_declares_idempotency_header_on_authenticated_writes(
         for method in ("post", "put", "patch", "delete"):
             operation = path_item.get(method)
             if operation is None or not operation.get("security"):
-                continue
-            if path in {
-                "/api/v1/sessions/current",
-            }:
                 continue
             header_names = {
                 parameter["name"]

@@ -12,14 +12,13 @@ def get_idempotency_record(
     db: Session,
     *,
     user_id: UUID,
-    brand_id: UUID | None,
     method: str,
     route_template: str,
     key_digest: str,
 ) -> IdempotencyRecord | None:
     statement = select(IdempotencyRecord).where(
         IdempotencyRecord.user_id == user_id,
-        IdempotencyRecord.brand_id == brand_id,
+        IdempotencyRecord.brand_id.is_(None),
         IdempotencyRecord.method == method,
         IdempotencyRecord.route_template == route_template,
         IdempotencyRecord.key_digest == key_digest,

@@ -179,7 +179,10 @@ def test_logout_revokes_only_the_current_session(client: TestClient) -> None:
 
     response = client.delete(
         "/api/v1/sessions/current",
-        headers=bearer(first_token),
+        headers={
+            **bearer(first_token),
+            "Idempotency-Key": "logout-current-session-0001",
+        },
     )
 
     assert response.status_code == 204

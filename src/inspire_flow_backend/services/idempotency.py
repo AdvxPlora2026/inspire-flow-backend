@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import Request
@@ -10,8 +10,8 @@ from starlette.datastructures import UploadFile
 
 from inspire_flow_backend.core.context_security import ContextCipher
 from inspire_flow_backend.core.errors import (
-    IdempotencyKeyConflictError,
     IdempotencyKeyRequiredError,
+    IdempotencyKeyReusedError,
     IdempotencyOutcomeUnknownError,
     IdempotencyReplay,
     IdempotencyRequestInProgressError,
@@ -28,19 +28,11 @@ from inspire_flow_backend.data.repositories.idempotency import (
 )
 
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-IDEMPOTENCY_EXEMPT_PATHS = frozenset(
-    {
-        "/api/v1/users",
-        "/api/v1/sessions",
-        "/api/v1/sessions/current",
-    }
-)
+DEFAULT_RETENTION = timedelta(hours=24)
 
 
 def requires_idempotency(request: Request) -> bool:
-    return (
-        request.method.upper() in WRITE_METHODS and request.url.path not in IDEMPOTENCY_EXEMPT_PATHS
-    )
+    return request.method.upper() in WRITE_METHODS
 
 
 async def prepare_idempotency(
@@ -50,7 +42,6 @@ async def prepare_idempotency(
     user_id: UUID,
     key: str | None,
     cipher: ContextCipher,
-    brand_id: UUID | None = None,
     processing_timeout_seconds: int,
 ) -> None:
     if not requires_idempotency(request):
@@ -64,14 +55,13 @@ async def prepare_idempotency(
     now = utc_now()
     delete_expired_idempotency_records(db, before=now)
     body = await _fingerprint_body(request)
-    route = request.scope.get("route")
-    route_template = getattr(route, "path", request.url.path)
+    normalized_path = _normalized_path(request)
     request_fingerprint = hashlib.sha256(
         b"\x1f".join(
             (
                 request.method.upper().encode(),
-                request.url.path.encode(),
-                request.url.query.encode(),
+                normalized_path.encode(),
+                _normalized_query(request),
                 body,
             )
         )
@@ -80,9 +70,8 @@ async def prepare_idempotency(
     record = get_idempotency_record(
         db,
         user_id=user_id,
-        brand_id=brand_id,
         method=request.method.upper(),
-        route_template=route_template,
+        route_template=normalized_path,
         key_digest=key_digest,
     )
     if record is not None:
@@ -98,14 +87,14 @@ async def prepare_idempotency(
     record = IdempotencyRecord(
         id=uuid4(),
         user_id=user_id,
-        brand_id=brand_id,
+        brand_id=None,
         method=request.method.upper(),
-        route_template=route_template,
+        route_template=normalized_path,
         key_digest=key_digest,
         request_fingerprint=request_fingerprint,
         status="processing",
         created_at=now,
-        expires_at=now + timedelta(hours=24),
+        expires_at=now + DEFAULT_RETENTION,
     )
     add_idempotency_record(db, record)
     try:
@@ -115,9 +104,8 @@ async def prepare_idempotency(
         concurrent = get_idempotency_record(
             db,
             user_id=user_id,
-            brand_id=brand_id,
             method=request.method.upper(),
-            route_template=route_template,
+            route_template=normalized_path,
             key_digest=key_digest,
         )
         if concurrent is None:
@@ -137,8 +125,24 @@ async def prepare_idempotency(
 
 async def _fingerprint_body(request: Request) -> bytes:
     content_type = request.headers.get("content-type", "")
-    if not content_type.casefold().startswith("multipart/form-data"):
-        return await request.body()
+    normalized_content_type = content_type.partition(";")[0].strip().casefold()
+    if normalized_content_type != "multipart/form-data":
+        body = await request.body()
+        if normalized_content_type == "application/json" or normalized_content_type.endswith(
+            "+json"
+        ):
+            try:
+                parsed = json.loads(body)
+                return json.dumps(
+                    parsed,
+                    allow_nan=False,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode()
+            except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+                return body
+        return body
 
     form = await request.form()
     parts: list[dict[str, object]] = []
@@ -171,6 +175,24 @@ async def _fingerprint_body(request: Request) -> bytes:
     ).encode()
 
 
+def _normalized_path(request: Request) -> str:
+    path = request.scope.get("path")
+    if not isinstance(path, str) or not path:
+        path = request.url.path
+    if path != "/":
+        path = path.rstrip("/")
+    return path or "/"
+
+
+def _normalized_query(request: Request) -> bytes:
+    items = sorted(request.query_params.multi_items())
+    return json.dumps(
+        items,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+
+
 def _replay_or_raise(
     db: Session,
     record: IdempotencyRecord,
@@ -181,7 +203,7 @@ def _replay_or_raise(
     processing_timeout_seconds: int,
 ) -> None:
     if record.request_fingerprint != request_fingerprint:
-        raise IdempotencyKeyConflictError
+        raise IdempotencyKeyReusedError
     if record.status == "processing":
         if record.created_at <= now - timedelta(seconds=processing_timeout_seconds):
             run = get_agent_turn_run_by_idempotency_record(db, record.id)
@@ -192,7 +214,7 @@ def _replay_or_raise(
                 release_conversation_for_agent_turn(db, run.id)
             record.status = "failed"
             record.completed_at = now
-            record.expires_at = now + timedelta(hours=24)
+            record.expires_at = now + DEFAULT_RETENTION
             db.commit()
             raise IdempotencyOutcomeUnknownError
         raise IdempotencyRequestInProgressError
@@ -228,6 +250,7 @@ def complete_idempotency(
         status_code=status_code,
         body=body,
         headers=headers,
+        retain_until=getattr(request.state, "idempotency_retain_until", None),
     )
 
 
@@ -239,6 +262,7 @@ def complete_idempotency_record(
     status_code: int,
     body: object,
     headers: dict[str, str],
+    retain_until: datetime | None = None,
 ) -> None:
     record = get_idempotency_record_by_id(db, record_id)
     if record is None:
@@ -249,5 +273,21 @@ def complete_idempotency_record(
     record.response_headers = json.dumps(headers, separators=(",", ":"), sort_keys=True)
     record.response_ciphertext = cipher.encrypt_json({"body": body})
     record.completed_at = now
-    record.expires_at = now + timedelta(hours=24)
+    record.expires_at = max(
+        now + DEFAULT_RETENTION,
+        _as_utc(retain_until) if retain_until is not None else now,
+    )
     db.commit()
+
+
+def retain_idempotency_until(request: Request, retain_until: datetime) -> None:
+    normalized = _as_utc(retain_until)
+    current = getattr(request.state, "idempotency_retain_until", None)
+    if current is None or normalized > _as_utc(current):
+        request.state.idempotency_retain_until = normalized
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("retention datetime must be timezone-aware")
+    return value.astimezone(UTC)

@@ -1,7 +1,6 @@
 from collections.abc import AsyncGenerator
 from functools import lru_cache
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -68,18 +67,12 @@ async def get_current_session(
     ):
         raise InvalidSessionError
     authenticated = resolve_session(db, credentials.credentials)
-    raw_brand_id = request.path_params.get("brand_id")
-    try:
-        brand_id = UUID(str(raw_brand_id)) if raw_brand_id is not None else None
-    except ValueError:
-        brand_id = None
     await prepare_idempotency(
         request,
         db=db,
         user_id=authenticated.user.id,
         key=idempotency_key,
         cipher=cipher,
-        brand_id=brand_id,
         processing_timeout_seconds=settings.agent_run_lock_ttl_seconds,
     )
     return authenticated

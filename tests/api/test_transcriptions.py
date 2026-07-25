@@ -128,7 +128,7 @@ def test_multipart_submission_replays_by_file_digest(
     assert replay.headers["Idempotency-Replayed"] == "true"
     assert publisher.job_ids == [UUID(first.json()["id"])]
     assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
+    assert conflict.json()["error"]["code"] == "idempotency_key_reused"
 
 
 def test_reads_encrypted_result_and_hides_foreign_job(

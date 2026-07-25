@@ -13,6 +13,7 @@ class ErrorBody(BaseModel):
     code: str
     message: str
     details: list[ErrorDetail] | None = None
+    retryable: bool | None = None
 
 
 class ErrorResponse(BaseModel):

@@ -1,9 +1,15 @@
+import json
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+from threading import Event
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from inspire_flow_backend.api.dependencies import get_injective_provider
+from inspire_flow_backend.data.models.idempotency import IdempotencyRecord
 from tests.api.conftest import FakeInjectiveProvider
 
 PASSWORD = "correct horse battery staple"
@@ -231,6 +237,111 @@ def test_commercial_task_full_lifecycle_and_proof(
     settlement_tx = body["transactions"][3]
     assert settlement_tx["amount"] == "150.5"
     assert settlement_tx["denom"] == "inj"
+
+
+def test_authorization_and_settlement_idempotency_survive_task_deadline(
+    client: TestClient,
+    db_session_factory,
+) -> None:
+    token = register_and_login(client, "长期幂等用户")
+    project_id = create_project(client, token)
+    task = create_task(client, token, project_id)
+    task_id = str(task["id"])
+    submit_artifact(client, token, task_id)
+
+    authorize = client.post(
+        f"/api/v1/commercial-tasks/{task_id}/authorize",
+        headers={
+            **authorization(token),
+            "Idempotency-Key": "long-authorization-0001",
+        },
+    )
+    settle = client.post(
+        f"/api/v1/commercial-tasks/{task_id}/settle",
+        headers={
+            **authorization(token),
+            "Idempotency-Key": "long-settlement-0001",
+        },
+    )
+
+    assert authorize.status_code == 200
+    assert settle.status_code == 200
+    minimum_expiry = task["deadline"]
+    with db_session_factory() as db:
+        records = list(
+            db.scalars(
+                select(IdempotencyRecord).where(
+                    IdempotencyRecord.route_template.in_(
+                        (
+                            f"/api/v1/commercial-tasks/{task_id}/authorize",
+                            f"/api/v1/commercial-tasks/{task_id}/settle",
+                        )
+                    )
+                )
+            )
+        )
+    assert len(records) == 2
+    deadline = datetime.fromisoformat(str(minimum_expiry))
+    assert all(record.expires_at >= deadline + timedelta(hours=24) for record in records)
+
+
+def test_concurrent_authorization_with_same_key_broadcasts_once(
+    client: TestClient,
+) -> None:
+    class BlockingProvider(FakeInjectiveProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.authorization_started = Event()
+            self.release_authorization = Event()
+            self.authorization_broadcasts = 0
+
+        def broadcast(self, memo: str):
+            if json.loads(memo)["action"] == "authorization_activated":
+                self.authorization_broadcasts += 1
+                self.authorization_started.set()
+                assert self.release_authorization.wait(timeout=5)
+            return super().broadcast(memo)
+
+    provider = BlockingProvider()
+    client.app.dependency_overrides[get_injective_provider] = lambda: provider
+    token = register_and_login(client, "并发授权用户")
+    project_id = create_project(client, token)
+    task = create_task(client, token, project_id)
+    task_id = str(task["id"])
+    submit_artifact(client, token, task_id)
+    headers = {
+        **authorization(token),
+        "Idempotency-Key": "concurrent-authorization-0001",
+    }
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        first_future = executor.submit(
+            client.post,
+            f"/api/v1/commercial-tasks/{task_id}/authorize",
+            headers=headers,
+        )
+        assert provider.authorization_started.wait(timeout=5)
+        duplicate = client.post(
+            f"/api/v1/commercial-tasks/{task_id}/authorize",
+            headers=headers,
+        )
+        provider.release_authorization.set()
+        first = first_future.result(timeout=5)
+
+    replay = client.post(
+        f"/api/v1/commercial-tasks/{task_id}/authorize",
+        headers=headers,
+    )
+    assert first.status_code == 200
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"] == {
+        "code": "idempotency_request_in_progress",
+        "message": "A request with this Idempotency-Key is still in progress",
+        "retryable": True,
+    }
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert provider.authorization_broadcasts == 1
 
 
 def test_out_of_order_actions_return_sequence_conflict(client: TestClient) -> None:

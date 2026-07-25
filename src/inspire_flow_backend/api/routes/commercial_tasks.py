@@ -1,7 +1,8 @@
+from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from inspire_flow_backend.api.dependencies import (
@@ -18,6 +19,7 @@ from inspire_flow_backend.schemas.commercial import (
 )
 from inspire_flow_backend.schemas.errors import ErrorResponse
 from inspire_flow_backend.services import commercial_tasks as commercial_task_service
+from inspire_flow_backend.services.idempotency import retain_idempotency_until
 from inspire_flow_backend.services.injective import InjectiveProvider
 from inspire_flow_backend.services.sessions import AuthenticatedSession
 
@@ -89,16 +91,19 @@ def create_submission(
 )
 def authorize_task(
     task_id: UUID,
+    request: Request,
     authenticated: Annotated[AuthenticatedSession, Depends(get_current_session)],
     db: Annotated[Session, Depends(get_db_session)],
     provider: Annotated[InjectiveProvider | None, Depends(get_injective_provider)],
 ) -> CommercialTaskPublic:
-    return commercial_task_service.authorize_task(
+    task = commercial_task_service.authorize_task(
         db,
         authenticated.user.id,
         task_id,
         provider,
     )
+    retain_idempotency_until(request, task.deadline + timedelta(hours=24))
+    return task
 
 
 @router.post(
@@ -108,16 +113,19 @@ def authorize_task(
 )
 def settle_task(
     task_id: UUID,
+    request: Request,
     authenticated: Annotated[AuthenticatedSession, Depends(get_current_session)],
     db: Annotated[Session, Depends(get_db_session)],
     provider: Annotated[InjectiveProvider | None, Depends(get_injective_provider)],
 ) -> CommercialTaskPublic:
-    return commercial_task_service.settle_task(
+    task = commercial_task_service.settle_task(
         db,
         authenticated.user.id,
         task_id,
         provider,
     )
+    retain_idempotency_until(request, task.deadline + timedelta(hours=24))
+    return task
 
 
 @router.get(

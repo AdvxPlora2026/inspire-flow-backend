@@ -13,6 +13,7 @@ class ApplicationError(Exception):
     message = "The request could not be completed"
     headers: dict[str, str] | None = None
     details: list[dict[str, object]] | None = None
+    retryable: bool | None = None
 
     def __init__(
         self,
@@ -51,9 +52,9 @@ class IdempotencyKeyRequiredError(ApplicationError):
     message = "Idempotency-Key is required for authenticated write requests"
 
 
-class IdempotencyKeyConflictError(ApplicationError):
+class IdempotencyKeyReusedError(ApplicationError):
     status_code = 409
-    code = "idempotency_key_conflict"
+    code = "idempotency_key_reused"
     message = "Idempotency-Key was already used with a different request"
 
 
@@ -61,6 +62,7 @@ class IdempotencyRequestInProgressError(ApplicationError):
     status_code = 409
     code = "idempotency_request_in_progress"
     message = "A request with this Idempotency-Key is still in progress"
+    retryable = True
 
 
 class IdempotencyOutcomeUnknownError(ApplicationError):
@@ -299,11 +301,14 @@ def error_response(
     code: str,
     message: str,
     details: list[dict[str, object]] | None = None,
+    retryable: bool | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     body: dict[str, object] = {"code": code, "message": message}
     if details is not None:
         body["details"] = details
+    if retryable is not None:
+        body["retryable"] = retryable
     return JSONResponse(
         status_code=status_code,
         content={"error": body},
@@ -321,6 +326,7 @@ async def handle_application_error(
         code=exc.code,
         message=exc.message,
         details=exc.details,
+        retryable=exc.retryable,
         headers=exc.headers,
     )
 
